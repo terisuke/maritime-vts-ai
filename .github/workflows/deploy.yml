@@ -138,10 +138,11 @@ jobs:
       
       - name: Create/Update Vocabulary
         working-directory: backend/vocabulary
+        continue-on-error: true
         run: |
           if ! aws transcribe get-vocabulary --vocabulary-name ${{ secrets.TRANSCRIBE_VOCABULARY_NAME }} 2>/dev/null; then
             echo "📝 Creating new vocabulary..."
-            node create-vocabulary.js
+            node create-vocabulary.js || echo "⚠️ Custom vocabulary creation failed but continuing (optional feature)"
           else
             echo "✅ Vocabulary already exists"
           fi
