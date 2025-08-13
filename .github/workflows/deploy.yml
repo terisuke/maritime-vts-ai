@@ -123,6 +123,10 @@ jobs:
         with:
           node-version: '18'
       
+      - name: Install vocabulary dependencies
+        working-directory: backend/vocabulary
+        run: npm install
+      
       - name: Check Vocabulary Status
         working-directory: backend/vocabulary
         run: |
