@@ -14,6 +14,13 @@ class TranscribeProcessor {
       region: process.env.AWS_REGION || 'ap-northeast-1'
     });
     this.sessions = new Map(); // connectionIdごとのセッション管理
+    
+    // 5分ごとに非アクティブセッションをクリーンアップ
+    setInterval(() => {
+      this.cleanupInactiveSessions();
+    }, 5 * 60 * 1000);
+    
+    this.logger.info('TranscribeProcessor initialized with periodic cleanup');
   }
 
   /**
@@ -59,7 +66,8 @@ class TranscribeProcessor {
         command,
         isActive: true,
         startTime: Date.now(),
-        chunksProcessed: 0
+        chunksProcessed: 0,
+        lastActivity: Date.now()
       };
 
       this.sessions.set(connectionId, transcribeSession);
@@ -242,34 +250,45 @@ class TranscribeProcessor {
   /**
    * セッションを停止
    * @param {string} connectionId - WebSocket接続ID
-   * @returns {void}
+   * @returns {Promise<void>}
    */
-  stopSession(connectionId) {
+  async stopSession(connectionId) {
     const session = this.sessions.get(connectionId);
     
     if (session) {
-      session.isActive = false;
-      
-      // ストリームを終了
-      if (session.audioStream) {
-        session.audioStream.end();
+      try {
+        session.isActive = false;
+        
+        // ストリームを確実にクローズ
+        if (session.audioStream) {
+          session.audioStream.end();
+          session.audioStream.destroy();
+        }
+
+        // セッション時間を記録
+        const sessionDuration = Date.now() - session.startTime;
+        
+        this.logger.info('Transcribe session cleaned up', {
+          connectionId,
+          duration: sessionDuration,
+          chunksProcessed: session.chunksProcessed
+        });
+
+        // メトリクス記録
+        this.logger.metric('TranscribeSessionDuration', sessionDuration, 'Milliseconds');
+        this.logger.metric('TranscribeSessionsStopped', 1, 'Count');
+
+        // メモリから削除
+        this.sessions.delete(connectionId);
+        
+        // ガベージコレクションを促す（利用可能な場合）
+        if (global.gc) {
+          global.gc();
+        }
+        
+      } catch (error) {
+        this.logger.error('Error cleaning up session', { connectionId, error });
       }
-
-      // セッション時間を記録
-      const sessionDuration = Date.now() - session.startTime;
-      
-      this.logger.info('Transcribe session stopped', {
-        connectionId,
-        duration: sessionDuration,
-        chunksProcessed: session.chunksProcessed
-      });
-
-      // メトリクス記録
-      this.logger.metric('TranscribeSessionDuration', sessionDuration, 'Milliseconds');
-      this.logger.metric('TranscribeSessionsStopped', 1, 'Count');
-
-      // セッションを削除
-      this.sessions.delete(connectionId);
     }
   }
 
@@ -299,6 +318,32 @@ class TranscribeProcessor {
     }
     
     return null;
+  }
+
+  /**
+   * 非アクティブセッションの定期クリーンアップ
+   * @returns {void}
+   */
+  cleanupInactiveSessions() {
+    const now = Date.now();
+    const timeout = 10 * 60 * 1000; // 10分
+    let cleanedCount = 0;
+    
+    this.sessions.forEach((session, connectionId) => {
+      if (!session.isActive && (now - session.lastActivity) > timeout) {
+        this.stopSession(connectionId);
+        cleanedCount++;
+      }
+    });
+    
+    if (cleanedCount > 0) {
+      this.logger.info('Cleanup completed', { 
+        cleanedSessions: cleanedCount,
+        activeSessions: this.sessions.size
+      });
+      
+      this.logger.metric('TranscribeSessionsCleanedUp', cleanedCount, 'Count');
+    }
   }
 
   /**

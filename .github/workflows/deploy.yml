@@ -32,7 +32,13 @@ jobs:
       
       - name: Run backend tests
         working-directory: backend
-        run: npm test || true  # テストが失敗してもCI/CDを続行（開発中のため）
+        run: |
+          npm test || {
+            echo "⚠️  Tests failed but continuing deployment (MVP phase)"
+            echo "🔄 TODO: Remove this bypass before production release"
+            echo "📝 Test failures must be addressed before Sprint 4"
+            exit 0
+          }
 
   deploy:
     name: Deploy Infrastructure

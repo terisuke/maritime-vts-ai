@@ -25,12 +25,31 @@ class BedrockProcessor {
    */
   async processVTSCommunication(transcriptText, context = {}) {
     try {
+      // 入力検証
+      if (!transcriptText || typeof transcriptText !== 'string') {
+        throw new Error('Invalid transcript text: must be a non-empty string');
+      }
+      
+      // 文字数制限（1000文字）
+      const sanitizedText = transcriptText.substring(0, 1000);
+      
+      // 危険な文字をエスケープ
+      const cleanText = sanitizedText
+        .replace(/[<>]/g, '') // HTMLタグ除去
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // 制御文字除去
+        .trim();
+      
+      if (cleanText.length === 0) {
+        throw new Error('Empty transcript after sanitization');
+      }
+      
       this.logger.info('Processing VTS communication', {
-        textLength: transcriptText.length,
+        originalLength: transcriptText.length,
+        cleanLength: cleanText.length,
         context
       });
 
-      const prompt = this.createVTSPrompt(transcriptText, context);
+      const prompt = this.createVTSPrompt(cleanText, context);
       
       const command = new InvokeModelCommand({
         modelId: this.modelId,

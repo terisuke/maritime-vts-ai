@@ -8,7 +8,7 @@
 ## 🎯 主要機能
 
 - **リアルタイム音声認識**: Amazon Transcribe Streamingによる低遅延文字起こし
-- **AI応答生成**: Amazon Bedrock Claude 3による状況分析と応答案作成
+- **AI応答生成**: Amazon Bedrock Claude 4による状況分析と応答案作成
 - **リスク分類**: 通信内容を3段階（GREEN/AMBER/RED）で自動分類
 - **音声出力**: Web Speech APIによる応答の音声読み上げ
 - **福岡港湾特化**: カスタム語彙による地域特有の用語認識
@@ -51,6 +51,14 @@ maritime-vts-ai/
 │   └── lib/                       # CDKスタック定義
 └── docs/                          # ドキュメント
 ```
+
+## ⚡ クイックスタート
+
+**🚀 10分でMVPを起動したい場合は → [📋 QUICK START ガイド](docs/QUICK_START.md)**
+
+初めての方やデモ目的なら、クイックスタートガイドで簡単に起動できます！
+
+---
 
 ## 🚀 セットアップ
 
@@ -189,7 +197,8 @@ MIT License
 
 ## 🔗 関連ドキュメント
 
+- [📋 **クイックスタートガイド**](docs/QUICK_START.md) ← **新規ユーザー推奨**
 - [デプロイガイド](docs/DEPLOYMENT.md)
 - [API仕様書](docs/API_SPECIFICATION.md)
 - [アーキテクチャ設計](docs/ARCHITECTURE.md)
-- [初期セットアップ](docs/SETUP.md)
+- [GitHub Actionsセットアップ](docs/GITHUB_SECRETS_SETUP.md)

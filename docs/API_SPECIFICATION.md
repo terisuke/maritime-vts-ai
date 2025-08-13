@@ -3,8 +3,30 @@
 ## WebSocket API
 
 ### エンドポイント
+
+**環境変数から取得**:
+```bash
+# 環境変数から取得
+${WEBSOCKET_ENDPOINT}
 ```
-wss://kaqn2r1p8i.execute-api.ap-northeast-1.amazonaws.com/prod
+
+**CDK出力から取得**:
+```bash
+aws cloudformation describe-stacks \
+  --stack-name VtsInfrastructureStack \
+  --query "Stacks[0].Outputs[?OutputKey=='WebSocketApiUrl'].OutputValue" \
+  --output text
+```
+
+**デプロイ後の出力から取得**:
+```bash
+# デプロイ時に outputs.json に保存される
+cat infrastructure/outputs.json | jq -r '.VtsInfrastructureStack.WebSocketApiUrl'
+```
+
+**例**:
+```
+wss://[API_ID].execute-api.ap-northeast-1.amazonaws.com/prod
 ```
 
 ### 接続フロー

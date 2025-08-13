@@ -354,29 +354,54 @@ class MessageRouter {
           confidence: result.confidence
         });
 
-        // Bedrockで分析（緊急性を自動判定）
-        const aiResponse = await this.bedrockProcessor.generateEmergencyResponse(result.text);
-        
-        // 非緊急の場合は詳細分析も実行
-        if (!aiResponse.isEmergency) {
-          const detailedResponse = await this.bedrockProcessor.processVTSCommunication(
-            result.text,
-            {
-              location: '博多港',
-              timestamp: new Date().toISOString(),
-              connectionId: connectionId,
-              vesselInfo: '未特定'
+        // AI処理をtry-catchでラップ
+        try {
+          // Bedrockで分析（緊急性を自動判定）
+          const aiResponse = await this.bedrockProcessor.generateEmergencyResponse(result.text);
+          
+          // 非緊急の場合は詳細分析も実行
+          if (!aiResponse.isEmergency) {
+            const detailedResponse = await this.bedrockProcessor.processVTSCommunication(
+              result.text,
+              {
+                location: '博多港',
+                timestamp: new Date().toISOString(),
+                connectionId: connectionId,
+                vesselInfo: '未特定'
+              }
+            );
+            // 詳細分析の結果をマージ
+            Object.assign(aiResponse, detailedResponse);
+          }
+          
+          // AI応答をクライアントに送信
+          await this.sendToConnection(connectionId, {
+            type: 'aiResponse',
+            payload: aiResponse
+          });
+          
+        } catch (aiError) {
+          this.logger.error('AI processing failed', { error: aiError, connectionId, transcriptText: result.text });
+          
+          // フォールバック応答を送信
+          await this.sendToConnection(connectionId, {
+            type: 'aiResponse',
+            payload: {
+              classification: 'AMBER',
+              suggestedResponse: 'AI処理中にエラーが発生しました。音声は正常に記録されています。もう一度お試しください。',
+              confidence: 0,
+              isEmergency: false,
+              error: true,
+              errorMessage: 'AI分析サービスが一時的に利用できません',
+              timestamp: new Date().toISOString()
             }
-          );
-          // 詳細分析の結果をマージ
-          Object.assign(aiResponse, detailedResponse);
+          });
+          
+          // AI処理エラーのメトリクスを記録
+          this.logger.metric('AIProcessingErrors', 1, 'Count', {
+            errorType: aiError.name || 'UnknownError'
+          });
         }
-        
-        // AI応答をクライアントに送信
-        await this.sendToConnection(connectionId, {
-          type: 'aiResponse',
-          payload: aiResponse
-        });
 
         // AI応答を保存
         const aiResponseItem = {
