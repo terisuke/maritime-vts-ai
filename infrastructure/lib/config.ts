@@ -38,7 +38,7 @@ export class VtsConfiguration {
 
   // AI/ML設定
   static readonly AI_CONFIG = {
-    BEDROCK_MODEL_ID: 'anthropic.claude-sonnet-4-20250514-v1:0',
+    BEDROCK_MODEL_ID: 'apac.anthropic.claude-sonnet-4-20250514-v1:0',  // APAC region model
     TRANSCRIBE_LANGUAGE: 'ja-JP',
     VOCABULARY_NAME: 'maritime-vts-vocabulary-ja',
     TEMPERATURE: 0.3,

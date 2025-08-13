@@ -50,6 +50,8 @@ export class ApiConstruct extends Construct {
       description: 'VTS Maritime AI WebSocket API for real-time communication',
       
       // ルート設定
+      // 重要: $connect, $disconnect, $defaultの3つのルートのみを設定
+      // カスタムアクションは$defaultルートで処理される
       connectRouteOptions: {
         integration: webSocketIntegration,
       },
@@ -61,36 +63,17 @@ export class ApiConstruct extends Construct {
       },
 
       // ルートレスポンス設定
+      // $defaultルートがすべてのカスタムアクションを処理
       routeSelectionExpression: '$request.body.action',
     });
 
-    // カスタムルートの追加
-    this.addCustomRoutes(api, webSocketIntegration);
+    // 注意: カスタムルートは作成しない
+    // すべてのカスタムアクション（ping, message, startTranscription等）は
+    // $defaultルートでLambda関数内のMessageRouterによって処理される
 
     return api;
   }
 
-  private addCustomRoutes(
-    api: apigatewayv2.WebSocketApi, 
-    integration: apigatewayv2_integrations.WebSocketLambdaIntegration
-  ): void {
-    // 特定アクション用のカスタムルート
-    const customRoutes = [
-      'ping',
-      'startTranscription',
-      'stopTranscription',
-      'audioData',
-      'message',
-    ];
-
-    customRoutes.forEach(routeKey => {
-      new apigatewayv2.WebSocketRoute(this, `${routeKey}Route`, {
-        webSocketApi: api,
-        routeKey,
-        integration,
-      });
-    });
-  }
 
   private createWebSocketStage(props: ApiConstructProps): apigatewayv2.WebSocketStage {
     const stageName = props.environment === 'prod' ? 'prod' : 'dev';
