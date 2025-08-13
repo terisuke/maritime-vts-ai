@@ -6,8 +6,8 @@
 const { ApiGatewayManagementApiClient, PostToConnectionCommand } = require('@aws-sdk/client-apigatewaymanagementapi');
 const { TranscribeStreamingClient, StartStreamTranscriptionCommand } = require('@aws-sdk/client-transcribe-streaming');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
-const Logger = require('../shared/logger');
-const dynamodbClient = require('../shared/dynamodb-client');
+const Logger = require('./shared/logger');
+const dynamodbClient = require('./shared/dynamodb-client');
 
 class MessageRouter {
   constructor(endpoint) {
