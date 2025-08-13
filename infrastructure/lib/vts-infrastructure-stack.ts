@@ -177,6 +177,7 @@ export class VtsInfrastructureStack extends cdk.Stack {
         CONNECTIONS_TABLE: connectionsTable.tableName,
         VHF_LOG_GROUP: vhfCommunicationLogGroup.logGroupName,
         AUDIO_BUCKET: audioStorageBucket.bucketName,
+        // TRANSCRIBE_VOCABULARY_NAME: 'maritime-vts-vocabulary-ja', // カスタム語彙は後で設定
         LOG_LEVEL: 'INFO',
       },
     });

@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎙️ AWS Transcribe Streaming テスト</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    
+    .container {
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      padding: 40px;
+      max-width: 800px;
+      width: 100%;
+    }
+    
+    h1 {
+      color: #333;
+      margin-bottom: 30px;
+      text-align: center;
+      font-size: 28px;
+    }
+    
+    .controls {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+      margin-bottom: 30px;
+      flex-wrap: wrap;
+    }
+    
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    #connectBtn {
+      background: #4CAF50;
+      color: white;
+    }
+    
+    #connectBtn:hover:not(:disabled) {
+      background: #45a049;
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(76, 175, 80, 0.4);
+    }
+    
+    #startBtn {
+      background: #2196F3;
+      color: white;
+    }
+    
+    #startBtn:hover:not(:disabled) {
+      background: #1976D2;
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(33, 150, 243, 0.4);
+    }
+    
+    #stopBtn {
+      background: #f44336;
+      color: white;
+    }
+    
+    #stopBtn:hover:not(:disabled) {
+      background: #da190b;
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(244, 67, 54, 0.4);
+    }
+    
+    .status-panel {
+      background: #f5f5f5;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    
+    .status-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      padding: 10px;
+      background: white;
+      border-radius: 5px;
+    }
+    
+    .status-label {
+      font-weight: 600;
+      color: #666;
+    }
+    
+    .status-value {
+      color: #333;
+      font-weight: 500;
+    }
+    
+    .connected {
+      color: #4CAF50;
+    }
+    
+    .disconnected {
+      color: #f44336;
+    }
+    
+    .recording {
+      color: #2196F3;
+    }
+    
+    .audio-level {
+      height: 30px;
+      background: #e0e0e0;
+      border-radius: 15px;
+      overflow: hidden;
+      margin: 20px 0;
+      position: relative;
+    }
+    
+    .audio-level-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #4CAF50, #8BC34A, #FFEB3B, #FF9800, #f44336);
+      width: 0%;
+      transition: width 0.1s;
+      border-radius: 15px;
+    }
+    
+    .transcription-panel {
+      background: #f9f9f9;
+      border-radius: 10px;
+      padding: 20px;
+      min-height: 200px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    
+    .transcription-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 15px;
+      color: #333;
+    }
+    
+    .transcription-item {
+      padding: 10px;
+      margin-bottom: 10px;
+      background: white;
+      border-radius: 5px;
+      border-left: 4px solid #2196F3;
+      animation: slideIn 0.3s ease-out;
+    }
+    
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+    
+    .transcription-partial {
+      border-left-color: #FFC107;
+      opacity: 0.8;
+    }
+    
+    .transcription-final {
+      border-left-color: #4CAF50;
+    }
+    
+    .transcription-text {
+      color: #333;
+      line-height: 1.5;
+    }
+    
+    .transcription-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 5px;
+      font-size: 12px;
+      color: #999;
+    }
+    
+    .test-phrases {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 10px;
+      padding: 20px;
+      margin-top: 20px;
+    }
+    
+    .test-phrases-title {
+      font-weight: 600;
+      color: #856404;
+      margin-bottom: 10px;
+    }
+    
+    .test-phrase {
+      background: white;
+      padding: 8px 12px;
+      margin: 5px 0;
+      border-radius: 5px;
+      font-family: monospace;
+      color: #333;
+    }
+    
+    .error-message {
+      background: #ffebee;
+      color: #c62828;
+      padding: 15px;
+      border-radius: 5px;
+      margin-top: 10px;
+      display: none;
+    }
+    
+    .info-message {
+      background: #e3f2fd;
+      color: #1565c0;
+      padding: 15px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎙️ AWS Transcribe Streaming テスト</h1>
+    
+    <div class="info-message">
+      ℹ️ このツールはAmazon Transcribe Streamingのリアルタイム音声認識をテストします。
+      福岡港湾用のカスタム語彙が適用されています。
+    </div>
+    
+    <div class="controls">
+      <button id="connectBtn">接続</button>
+      <button id="startBtn" disabled>録音開始</button>
+      <button id="stopBtn" disabled>録音停止</button>
+    </div>
+    
+    <div class="status-panel">
+      <div class="status-item">
+        <span class="status-label">WebSocket接続:</span>
+        <span id="wsStatus" class="status-value disconnected">未接続</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">録音状態:</span>
+        <span id="recordStatus" class="status-value">停止中</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">処理済みチャンク:</span>
+        <span id="chunkCount" class="status-value">0</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">認識結果数:</span>
+        <span id="resultCount" class="status-value">0</span>
+      </div>
+    </div>
+    
+    <div class="audio-level">
+      <div id="audioLevelBar" class="audio-level-bar"></div>
+    </div>
+    
+    <div class="transcription-panel">
+      <div class="transcription-title">📝 文字起こし結果</div>
+      <div id="transcriptionResults"></div>
+    </div>
+    
+    <div class="test-phrases">
+      <div class="test-phrases-title">🧪 テスト用フレーズ（読み上げてください）</div>
+      <div class="test-phrase">博多港に向かって航行中です</div>
+      <div class="test-phrase">関門海峡を通過予定、ETAは15時30分</div>
+      <div class="test-phrase">コンテナ船さくら丸、VTSセンターどうぞ</div>
+      <div class="test-phrase">パイロット乗船位置まで10分で到着します</div>
+      <div class="test-phrase">風速15ノット、波高2メートル、視程良好</div>
+    </div>
+    
+    <div id="errorMessage" class="error-message"></div>
+  </div>
+
+  <script>
+    // Configuration
+    const WS_URL = 'wss://kaqn2r1p8i.execute-api.ap-northeast-1.amazonaws.com/prod';
+    const SAMPLE_RATE = 16000;
+    const CHUNK_INTERVAL = 100; // ms
+    
+    // State
+    let ws = null;
+    let mediaRecorder = null;
+    let audioContext = null;
+    let analyser = null;
+    let microphone = null;
+    let scriptProcessor = null;
+    let isRecording = false;
+    let chunkCount = 0;
+    let resultCount = 0;
+    let animationFrameId = null;
+    
+    // UI Elements
+    const connectBtn = document.getElementById('connectBtn');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const wsStatus = document.getElementById('wsStatus');
+    const recordStatus = document.getElementById('recordStatus');
+    const chunkCountEl = document.getElementById('chunkCount');
+    const resultCountEl = document.getElementById('resultCount');
+    const audioLevelBar = document.getElementById('audioLevelBar');
+    const transcriptionResults = document.getElementById('transcriptionResults');
+    const errorMessage = document.getElementById('errorMessage');
+    
+    // WebSocket Connection
+    connectBtn.onclick = () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+        return;
+      }
+      
+      console.log('Connecting to:', WS_URL);
+      ws = new WebSocket(WS_URL);
+      
+      ws.onopen = () => {
+        console.log('✅ WebSocket connected');
+        wsStatus.textContent = '接続済み';
+        wsStatus.className = 'status-value connected';
+        connectBtn.textContent = '切断';
+        startBtn.disabled = false;
+        
+        // Send ping
+        ws.send(JSON.stringify({
+          action: 'ping',
+          payload: {},
+          timestamp: new Date().toISOString()
+        }));
+      };
+      
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log('Received:', data);
+        
+        if (data.type === 'transcription') {
+          handleTranscriptionResult(data.payload || data.data);
+        } else if (data.type === 'error') {
+          showError(data.error || 'Unknown error');
+        } else if (data.type === 'status') {
+          console.log('Status:', data.message);
+        }
+      };
+      
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        showError('WebSocket接続エラーが発生しました');
+      };
+      
+      ws.onclose = () => {
+        console.log('WebSocket disconnected');
+        wsStatus.textContent = '未接続';
+        wsStatus.className = 'status-value disconnected';
+        connectBtn.textContent = '接続';
+        startBtn.disabled = true;
+        stopBtn.disabled = true;
+        
+        if (isRecording) {
+          stopRecording();
+        }
+      };
+    };
+    
+    // Audio Recording with Web Audio API
+    startBtn.onclick = async () => {
+      try {
+        // Get microphone access
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: SAMPLE_RATE,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+        
+        // Initialize Web Audio API
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({
+          sampleRate: SAMPLE_RATE
+        });
+        
+        microphone = audioContext.createMediaStreamSource(stream);
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        
+        // Create script processor for raw PCM data
+        scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+        
+        scriptProcessor.onaudioprocess = (event) => {
+          if (!isRecording) return;
+          
+          const inputData = event.inputBuffer.getChannelData(0);
+          const pcmData = convertFloat32ToInt16(inputData);
+          const base64Audio = arrayBufferToBase64(pcmData);
+          
+          // Send audio chunk to WebSocket
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              action: 'audioData',
+              payload: {
+                audio: base64Audio,
+                sequenceNumber: chunkCount
+              },
+              timestamp: new Date().toISOString()
+            }));
+            
+            chunkCount++;
+            chunkCountEl.textContent = chunkCount.toString();
+          }
+        };
+        
+        // Connect nodes
+        microphone.connect(analyser);
+        microphone.connect(scriptProcessor);
+        scriptProcessor.connect(audioContext.destination);
+        
+        // Start transcription session
+        ws.send(JSON.stringify({
+          action: 'startTranscription',
+          payload: {
+            languageCode: 'ja-JP',
+            sampleRate: SAMPLE_RATE
+          },
+          timestamp: new Date().toISOString()
+        }));
+        
+        isRecording = true;
+        recordStatus.textContent = '録音中';
+        recordStatus.className = 'status-value recording';
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        
+        // Start audio level visualization
+        visualizeAudioLevel();
+        
+        console.log('🎙️ Recording started');
+        
+      } catch (error) {
+        console.error('Failed to start recording:', error);
+        showError('マイクへのアクセスに失敗しました: ' + error.message);
+      }
+    };
+    
+    // Stop Recording
+    stopBtn.onclick = () => {
+      stopRecording();
+    };
+    
+    function stopRecording() {
+      isRecording = false;
+      recordStatus.textContent = '停止中';
+      recordStatus.className = 'status-value';
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      
+      // Stop audio processing
+      if (scriptProcessor) {
+        scriptProcessor.disconnect();
+        scriptProcessor = null;
+      }
+      
+      if (microphone) {
+        microphone.disconnect();
+        microphone = null;
+      }
+      
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+      }
+      
+      // Stop animation
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+      
+      // Reset audio level
+      audioLevelBar.style.width = '0%';
+      
+      // Stop transcription session
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          action: 'stopTranscription',
+          payload: {},
+          timestamp: new Date().toISOString()
+        }));
+      }
+      
+      console.log('🛑 Recording stopped');
+    }
+    
+    // Convert Float32 to Int16 PCM
+    function convertFloat32ToInt16(buffer) {
+      const l = buffer.length;
+      const buf = new Int16Array(l);
+      
+      for (let i = 0; i < l; i++) {
+        const s = Math.max(-1, Math.min(1, buffer[i]));
+        buf[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      
+      return buf.buffer;
+    }
+    
+    // Convert ArrayBuffer to Base64
+    function arrayBufferToBase64(buffer) {
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+    }
+    
+    // Visualize Audio Level
+    function visualizeAudioLevel() {
+      if (!analyser || !isRecording) {
+        audioLevelBar.style.width = '0%';
+        return;
+      }
+      
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(dataArray);
+      
+      // Calculate average volume
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const average = sum / dataArray.length;
+      const percentage = (average / 255) * 100;
+      
+      audioLevelBar.style.width = percentage + '%';
+      
+      animationFrameId = requestAnimationFrame(visualizeAudioLevel);
+    }
+    
+    // Handle Transcription Results
+    function handleTranscriptionResult(result) {
+      resultCount++;
+      resultCountEl.textContent = resultCount.toString();
+      
+      const div = document.createElement('div');
+      div.className = result.isPartial ? 
+        'transcription-item transcription-partial' : 
+        'transcription-item transcription-final';
+      
+      const textDiv = document.createElement('div');
+      textDiv.className = 'transcription-text';
+      textDiv.textContent = result.transcriptText || result.text || '';
+      
+      const metaDiv = document.createElement('div');
+      metaDiv.className = 'transcription-meta';
+      metaDiv.innerHTML = `
+        <span>${result.isPartial ? '部分認識' : '確定'}</span>
+        <span>信頼度: ${Math.round((result.confidence || 0) * 100)}%</span>
+        <span>${new Date(result.timestamp).toLocaleTimeString('ja-JP')}</span>
+      `;
+      
+      div.appendChild(textDiv);
+      div.appendChild(metaDiv);
+      
+      // Add to top of results
+      transcriptionResults.insertBefore(div, transcriptionResults.firstChild);
+      
+      // Limit displayed results
+      while (transcriptionResults.children.length > 20) {
+        transcriptionResults.removeChild(transcriptionResults.lastChild);
+      }
+    }
+    
+    // Show Error Message
+    function showError(message) {
+      errorMessage.textContent = '❌ ' + message;
+      errorMessage.style.display = 'block';
+      
+      setTimeout(() => {
+        errorMessage.style.display = 'none';
+      }, 5000);
+    }
+    
+    // Check browser compatibility
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showError('このブラウザは音声録音に対応していません');
+      startBtn.disabled = true;
+    }
+    
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+      if (isRecording) {
+        stopRecording();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -4,10 +4,10 @@
  */
 
 const { ApiGatewayManagementApiClient, PostToConnectionCommand } = require('@aws-sdk/client-apigatewaymanagementapi');
-const { TranscribeStreamingClient, StartStreamTranscriptionCommand } = require('@aws-sdk/client-transcribe-streaming');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const Logger = require('./shared/logger');
 const dynamodbClient = require('./shared/dynamodb-client');
+const TranscribeProcessor = require('./shared/transcribe-processor');
 
 class MessageRouter {
   constructor(endpoint) {
@@ -24,10 +24,13 @@ class MessageRouter {
       region: process.env.AWS_REGION || 'ap-northeast-1'
     });
 
-    // Transcribe Streaming Client
-    this.transcribeClient = new TranscribeStreamingClient({
-      region: process.env.AWS_REGION || 'ap-northeast-1'
-    });
+    // Transcribe Processor初期化
+    this.transcribeProcessor = new TranscribeProcessor();
+    
+    // Transcribe結果のコールバック設定
+    this.transcribeProcessor.onTranscriptionResult = async (connectionId, result) => {
+      await this.handleTranscriptionResult(connectionId, result);
+    };
 
     this.audioBucket = process.env.AUDIO_BUCKET || 'vts-audio-storage';
     this.conversationsTable = process.env.CONVERSATIONS_TABLE || 'vts-conversations';
@@ -161,38 +164,51 @@ class MessageRouter {
   async handleStartTranscription(connectionId, payload) {
     this.logger.info('Starting transcription', { connectionId, payload });
 
-    // セッション情報を作成
-    const sessionId = `TRANS-${connectionId}-${Date.now()}`;
-    const sessionData = {
-      ConversationID: sessionId,
-      ItemTimestamp: `SESSION#${new Date().toISOString()}`,
-      ItemType: 'TRANSCRIPTION_SESSION',
-      ConnectionID: connectionId,
-      Status: 'STARTED',
-      Language: payload.languageCode || payload.language || 'ja-JP',
-      VocabularyName: payload.vocabularyName || 'maritime-vts-vocabulary',
-      SampleRate: payload.sampleRate || 16000,
-      StartedAt: new Date().toISOString()
-    };
+    try {
+      // 言語コード取得
+      const languageCode = payload.languageCode || payload.language || 'ja-JP';
+      
+      // Transcribeセッションを開始
+      await this.transcribeProcessor.startSession(connectionId, languageCode);
 
-    await dynamodbClient.putItem(this.conversationsTable, sessionData);
+      // セッション情報をDynamoDBに保存
+      const sessionId = `TRANS-${connectionId}-${Date.now()}`;
+      const sessionData = {
+        ConversationID: sessionId,
+        ItemTimestamp: `SESSION#${new Date().toISOString()}`,
+        ItemType: 'TRANSCRIPTION_SESSION',
+        ConnectionID: connectionId,
+        Status: 'STARTED',
+        Language: languageCode,
+        VocabularyName: process.env.TRANSCRIBE_VOCABULARY_NAME || 'maritime-vts-vocabulary-ja',
+        SampleRate: payload.sampleRate || 16000,
+        StartedAt: new Date().toISOString()
+      };
 
-    // クライアントに開始確認を送信
-    await this.sendToConnection(connectionId, {
-      type: 'status',
-      message: 'Transcription started',
-      sessionId: sessionId,
-      timestamp: new Date().toISOString()
-    });
+      await dynamodbClient.putItem(this.conversationsTable, sessionData);
 
-    this.logger.audit('TRANSCRIPTION_STARTED', {
-      connectionId,
-      sessionId,
-      language: sessionData.Language,
-      vocabularyName: sessionData.VocabularyName
-    });
+      // クライアントに開始確認を送信
+      await this.sendToConnection(connectionId, {
+        type: 'status',
+        message: 'Transcription started',
+        sessionId: sessionId,
+        timestamp: new Date().toISOString()
+      });
 
-    return { statusCode: 200, body: 'Transcription started' };
+      this.logger.audit('TRANSCRIPTION_STARTED', {
+        connectionId,
+        sessionId,
+        language: sessionData.Language,
+        vocabularyName: sessionData.VocabularyName
+      });
+
+      return { statusCode: 200, body: 'Transcription started' };
+      
+    } catch (error) {
+      this.logger.error('Failed to start transcription', error);
+      await this.sendError(connectionId, 'Failed to start transcription');
+      return { statusCode: 500, body: 'Failed to start transcription' };
+    }
   }
 
   /**
@@ -203,6 +219,9 @@ class MessageRouter {
    */
   async handleStopTranscription(connectionId, payload) {
     this.logger.info('Stopping transcription', { connectionId, payload });
+
+    // Transcribeセッションを停止
+    this.transcribeProcessor.stopSession(connectionId);
 
     const sessionId = payload.sessionId || `TRANS-${connectionId}`;
     
@@ -255,54 +274,30 @@ class MessageRouter {
         return { statusCode: 400, body: 'Invalid audio data' };
       }
 
-      // Base64デコード
-      const audioBuffer = Buffer.from(audioData, 'base64');
+      // Transcribeセッションがなければ自動開始
+      if (!this.transcribeProcessor.sessions.has(connectionId)) {
+        this.logger.info('Auto-starting Transcribe session', { connectionId });
+        await this.transcribeProcessor.startSession(connectionId);
+      }
+
+      // 音声データをTranscribe Processorに送る
+      await this.transcribeProcessor.processAudioChunk(connectionId, audioData);
 
       // デバッグ用：S3に音声ファイルを保存（オプション）
       if (process.env.SAVE_AUDIO_TO_S3 === 'true') {
+        const audioBuffer = Buffer.from(audioData, 'base64');
         const s3Key = `audio/${sessionId}/${Date.now()}-${sequenceNumber}.raw`;
         await this.saveAudioToS3(audioBuffer, s3Key);
       }
 
-      this.logger.debug('Audio data received', {
+      this.logger.debug('Audio data processed', {
         connectionId,
         sessionId,
         sequenceNumber,
-        audioSize: audioBuffer.length
+        audioSize: audioData.length
       });
 
-      // 仮の文字起こし結果を送信（Day 6のMVP用）
-      // TODO: Day 7でTranscribe Streamingへの実装に置き換え
-      
-      // 部分的な結果を送信
-      setTimeout(async () => {
-        await this.sendToConnection(connectionId, {
-          type: 'transcription',
-          payload: {
-            transcriptText: '本船は東京湾入口を通過中',
-            confidence: 0.85,
-            timestamp: new Date().toISOString(),
-            isPartial: true,
-            speakerLabel: 'VTS'
-          }
-        });
-      }, 500);
-
-      // 最終結果を送信
-      setTimeout(async () => {
-        await this.sendToConnection(connectionId, {
-          type: 'transcription',
-          payload: {
-            transcriptText: '本船は東京湾入口を通過中です。現在の速力は12ノット。',
-            confidence: 0.95,
-            timestamp: new Date().toISOString(),
-            isPartial: false,
-            speakerLabel: 'VTS'
-          }
-        });
-      }, 2000);
-
-      this.logger.metric('AudioDataProcessed', audioBuffer.length, 'Bytes', {
+      this.logger.metric('AudioDataProcessed', audioData.length, 'Bytes', {
         sessionId
       });
 
@@ -311,6 +306,59 @@ class MessageRouter {
       this.logger.error('Failed to process audio data', error);
       await this.sendError(connectionId, 'Failed to process audio data');
       return { statusCode: 500, body: 'Failed to process audio data' };
+    }
+  }
+
+  /**
+   * Transcribe結果の処理
+   * @param {string} connectionId - WebSocket接続ID
+   * @param {Object} result - Transcribe結果
+   * @returns {Promise<void>}
+   */
+  async handleTranscriptionResult(connectionId, result) {
+    try {
+      // クライアントに文字起こし結果を送信
+      await this.sendToConnection(connectionId, {
+        type: 'transcription',
+        payload: {
+          transcriptText: result.text,
+          confidence: result.confidence,
+          timestamp: result.timestamp,
+          isPartial: result.isPartial,
+          speakerLabel: 'VTS' // TODO: 将来的に話者識別を実装
+        }
+      });
+
+      // 完全な文字起こしの場合、会話履歴に保存
+      if (!result.isPartial && result.text.length > 0) {
+        const transcriptionItem = {
+          ConversationID: `CONN-${connectionId}`,
+          ItemTimestamp: `TRANS#${result.timestamp}`,
+          ItemType: 'TRANSCRIPTION',
+          ConnectionID: connectionId,
+          TranscriptText: result.text,
+          Confidence: result.confidence,
+          Timestamp: result.timestamp
+        };
+
+        await dynamodbClient.putItem(this.conversationsTable, transcriptionItem);
+
+        this.logger.info('Transcription saved', {
+          connectionId,
+          textLength: result.text.length,
+          confidence: result.confidence
+        });
+
+        // TODO: Day 8でBedrock AIに送信
+        // await this.processWithAI(connectionId, result.text);
+      }
+
+      this.logger.metric('TranscriptionsSent', 1, 'Count', {
+        isPartial: result.isPartial
+      });
+
+    } catch (error) {
+      this.logger.error('Failed to handle transcription result', error);
     }
   }
 

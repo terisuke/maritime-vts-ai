@@ -1,0 +1,13 @@
+{
+  "name": "vts-vocabulary",
+  "version": "1.0.0",
+  "description": "Amazon Transcribe custom vocabulary for Maritime VTS",
+  "main": "create-vocabulary.js",
+  "scripts": {
+    "create": "node create-vocabulary.js",
+    "check": "node check-vocabulary.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-transcribe": "^3.0.0"
+  }
+}
