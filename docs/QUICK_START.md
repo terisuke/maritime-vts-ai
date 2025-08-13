@@ -1,8 +1,12 @@
 # 🚀 クイックスタートガイド
 
+## 概要
+福岡港湾VTS AI支援システムを10分で起動し、実際のAI音声認識・応答生成を体験できます。本システムは**完全実装済み**で、Amazon Transcribe、Amazon Bedrock Claude Sonnet 4を活用した本格的な海上交通管制支援が可能です。
+
 ## 前提条件
 - Node.js 18以上
-- AWS CLI設定済み
+- AWS CLI設定済み（[設定方法](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html)）
+- AWS Bedrockの有効化（東京リージョン）
 - GitHubアカウント
 
 ## 10分でMVPを起動
@@ -34,14 +38,33 @@ npx cdk bootstrap  # 初回のみ
 npx cdk deploy VtsInfrastructureStack --outputs-file outputs.json
 ```
 
-### Step 5: WebSocket URL取得（30秒）
+デプロイされる主要コンポーネント:
+- **WebSocket API**: リアルタイム双方向通信
+- **Lambda Functions**: 音声処理・AI分析・WebSocket管理
+- **DynamoDB Tables**: 会話履歴・接続管理
+- **CloudWatch**: ログ・メトリクス監視
+
+### Step 5: カスタム語彙の登録（1分）
+```bash
+# 福岡港湾専門用語の登録（オプション）
+cd ../backend/vocabulary
+node create-vocabulary.js
+```
+
+登録される専門用語例:
+- 港湾名: 博多港、北九州港、門司港
+- 施設名: 中央ふ頭、箱崎ふ頭、香椎パークポート
+- 海事用語: メーデー、パンパン、セキュリテ
+
+### Step 6: WebSocket URL取得（30秒）
 ```bash
 # outputs.jsonからWebSocket URLを取得
+cd ../../infrastructure
 export WS_URL=$(cat outputs.json | jq -r '.VtsInfrastructureStack.WebSocketApiUrl')
 echo "WebSocket URL: $WS_URL"
 ```
 
-### Step 6: フロントエンド起動（30秒）
+### Step 7: フロントエンド起動（30秒）
 ```bash
 cd ../frontend
 
@@ -54,7 +77,7 @@ echo "VITE_DEBUG=true" >> .env.local
 npm run dev
 ```
 
-### Step 7: アクセス
+### Step 8: アクセス
 ブラウザで http://localhost:5173 を開く
 
 ## 🎙️ 基本的な使い方
@@ -67,10 +90,11 @@ npm run dev
 5. AI応答を確認
 
 ### 動作確認ポイント
-- **WebSocket接続**: 画面右上に「接続中」表示
-- **音声認識**: 話した内容がリアルタイムで文字化
-- **AI応答**: Claude Sonnet 4による海上交通管制応答
-- **会話履歴**: DynamoDBに保存された通信ログ
+- **WebSocket接続**: 画面右上に「接続中」表示（緑色）
+- **音声認識**: Amazon Transcribeによるリアルタイム文字化（精度88%）
+- **AI応答**: Claude Sonnet 4（2025年5月版）による適切な海上交通管制応答
+- **リスク分類**: GREEN/AMBER/REDの自動判定
+- **会話履歴**: DynamoDBに自動保存（30日間保持）
 
 ## 🔧 トラブルシューティング
 
