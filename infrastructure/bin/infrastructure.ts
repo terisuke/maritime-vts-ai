@@ -17,7 +17,7 @@ const env = {
 new OidcProviderStack(app, 'VtsOidcProviderStack', {
   env,
   description: 'OIDC Provider for GitHub Actions - Maritime VTS AI System',
-  githubOrg: process.env.GITHUB_ORG || 'your-github-org', // 要変更
+  githubOrg: process.env.GITHUB_ORG || 'terisuke', // 正しいGitHubユーザー名に修正
   githubRepo: process.env.GITHUB_REPO || 'maritime-vts-ai',
 });
 
