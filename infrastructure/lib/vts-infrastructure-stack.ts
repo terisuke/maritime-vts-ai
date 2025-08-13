@@ -210,7 +210,7 @@ export class VtsInfrastructureStack extends cdk.Stack {
       memorySize: 2048,
       environment: {
         CONVERSATIONS_TABLE: conversationsTable.tableName,
-        BEDROCK_MODEL_ID: 'anthropic.claude-3-sonnet-20240229-v1:0',
+        BEDROCK_MODEL_ID: 'anthropic.claude-sonnet-4-20250514-v1:0',
       },
     });
 

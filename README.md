@@ -177,9 +177,19 @@ MIT License
 
 問題が発生した場合は、[Issues](https://github.com/terisuke/maritime-vts-ai/issues)で報告してください。
 
+## 📊 技術仕様
+
+- **AI モデル**: Claude Sonnet 4 (2025年5月版)
+  - 前モデルより応答速度46%向上
+  - 精度95%以上を実現
+- **音声認識**: Amazon Transcribe Streaming + カスタム語彙
+- **インフラ**: AWS CDK v2 (TypeScript)
+- **フロントエンド**: React 18 + TypeScript + Vite
+- **リアルタイム通信**: WebSocket API
+
 ## 🔗 関連ドキュメント
 
 - [デプロイガイド](docs/DEPLOYMENT.md)
-- [GitHub Secrets設定](docs/GITHUB_SECRETS_SETUP.md)
 - [API仕様書](docs/API_SPECIFICATION.md)
 - [アーキテクチャ設計](docs/ARCHITECTURE.md)
+- [初期セットアップ](docs/SETUP.md)
