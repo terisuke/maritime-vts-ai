@@ -105,6 +105,17 @@
       "Resource": "*"
     },
     {
+      "Sid": "LambdaListAccess",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:ListFunctions",
+        "lambda:ListLayers",
+        "lambda:ListEventSourceMappings",
+        "lambda:ListLayerVersions"
+      ],
+      "Resource": "*"
+    },
+    {
       "Sid": "LambdaFullAccess",
       "Effect": "Allow",
       "Action": [
@@ -121,6 +132,16 @@
       "Action": [
         "apigatewayv2:*",
         "apigateway:*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DynamoDBListAccess",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:ListTables",
+        "dynamodb:DescribeTable",
+        "dynamodb:ListTagsOfResource"
       ],
       "Resource": "*"
     },
