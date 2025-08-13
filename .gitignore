@@ -61,3 +61,5 @@ temp/
 # Build artifacts
 *.zip
 lambda-packages/
+.aws-setup/
+github-deploy-credentials.json
