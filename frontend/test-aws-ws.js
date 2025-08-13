@@ -1,8 +1,18 @@
 import WebSocket from 'ws';
+import dotenv from 'dotenv';
 
-const WS_URL = 'wss://kaqn2r1p8i.execute-api.ap-northeast-1.amazonaws.com/prod';
+// 環境変数を読み込み
+dotenv.config({ path: '.env.staging' });
 
-console.log('🔌 Connecting to AWS WebSocket:', WS_URL);
+const WS_URL = process.env.VITE_WS_URL || 'ws://localhost:8080';
+
+if (!WS_URL.includes('localhost') && !process.env.ALLOW_PRODUCTION_TEST) {
+  console.error('⚠️ WARNING: Attempting to connect to production environment!');
+  console.error('Set ALLOW_PRODUCTION_TEST=true to proceed');
+  process.exit(1);
+}
+
+console.log('🔌 Connecting to WebSocket:', WS_URL);
 
 const ws = new WebSocket(WS_URL);
 
