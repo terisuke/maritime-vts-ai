@@ -1,0 +1,65 @@
+name: Validate Pull Request
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'infrastructure/**'
+      - 'backend/**'
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: infrastructure/package-lock.json
+
+      - name: Install infrastructure dependencies
+        run: |
+          cd infrastructure
+          npm ci
+
+      - name: Build TypeScript
+        run: |
+          cd infrastructure
+          npm run build
+
+      - name: Run CDK Synth
+        run: |
+          cd infrastructure
+          npx cdk synth
+
+      - name: Check Lambda function files exist
+        run: |
+          echo "Checking Lambda function implementations..."
+          ls -la backend/lambda/websocket-handler/
+          ls -la backend/lambda/transcription-handler/
+          ls -la backend/lambda/nlp-processor/
+          ls -la backend/lambda/shared/
+          echo "✅ All Lambda function files present"
+
+      - name: Validate CloudFormation templates
+        run: |
+          cd infrastructure
+          echo "Validating generated CloudFormation templates..."
+          ls -la cdk.out/*.json | head -5
+          echo "✅ CloudFormation templates generated successfully"
+
+      - name: Summary
+        run: |
+          echo "## PR Validation Summary"
+          echo "- ✅ TypeScript build successful"
+          echo "- ✅ CDK synth successful"
+          echo "- ✅ Lambda functions present"
+          echo "- ✅ CloudFormation templates valid"

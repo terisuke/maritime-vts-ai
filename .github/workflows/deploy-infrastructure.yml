@@ -3,12 +3,8 @@ name: Deploy Infrastructure
 on:
   push:
     branches:
-      - main
-      - develop
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
+      - main  # mainブランチへのプッシュ時のみ
+  workflow_dispatch:  # 手動実行オプション
 
 env:
   AWS_REGION: ap-northeast-1

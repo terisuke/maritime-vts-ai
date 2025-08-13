@@ -7,6 +7,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
+import * as path from 'path';
 
 export class VtsInfrastructureStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -31,6 +32,33 @@ export class VtsInfrastructureStack extends cdk.Stack {
       pointInTimeRecovery: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY, // MVP用設定
       stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
+    });
+
+    // DynamoDB - WebSocket接続管理テーブル
+    const connectionsTable = new dynamodb.Table(this, 'VtsConnectionsTable', {
+      tableName: 'vts-connections',
+      partitionKey: {
+        name: 'connectionId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      timeToLiveAttribute: 'ttl', // TTL設定
+      removalPolicy: cdk.RemovalPolicy.DESTROY, // MVP用設定
+      stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
+    });
+
+    // GSI - ステータスによる検索用
+    connectionsTable.addGlobalSecondaryIndex({
+      indexName: 'StatusIndex',
+      partitionKey: {
+        name: 'status',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'connectedAt',
+        type: dynamodb.AttributeType.STRING,
+      },
+      projectionType: dynamodb.ProjectionType.ALL,
     });
 
     // GSI - 船舶名による検索用
@@ -135,43 +163,21 @@ export class VtsInfrastructureStack extends cdk.Stack {
       })
     );
 
-    // Lambda関数 - WebRTC Signaling Handler
+    // Lambda関数 - WebSocket Handler
     const signalingFunction = new lambda.Function(this, 'VtsSignalingFunction', {
-      functionName: 'vts-webrtc-signaling',
+      functionName: 'vts-websocket-handler',
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'index.handler',
-      code: lambda.Code.fromInline(`
-        // プレースホルダーコード - 後で実装
-        exports.handler = async (event) => {
-          console.log('WebRTC Signaling Event:', JSON.stringify(event));
-          
-          // WebSocket接続管理のサンプル
-          const eventType = event.requestContext?.eventType;
-          
-          switch(eventType) {
-            case 'CONNECT':
-              console.log('Client connected:', event.requestContext.connectionId);
-              break;
-            case 'DISCONNECT':
-              console.log('Client disconnected:', event.requestContext.connectionId);
-              break;
-            case 'MESSAGE':
-              console.log('Message received:', event.body);
-              break;
-          }
-          
-          return {
-            statusCode: 200,
-            body: JSON.stringify({ message: 'Signaling handler processed' }),
-          };
-        };
-      `),
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../backend/lambda/websocket-handler')),
       role: lambdaExecutionRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
       environment: {
         CONVERSATIONS_TABLE: conversationsTable.tableName,
+        CONNECTIONS_TABLE: connectionsTable.tableName,
         VHF_LOG_GROUP: vhfCommunicationLogGroup.logGroupName,
+        AUDIO_BUCKET: audioStorageBucket.bucketName,
+        LOG_LEVEL: 'INFO',
       },
     });
 
@@ -180,47 +186,7 @@ export class VtsInfrastructureStack extends cdk.Stack {
       functionName: 'vts-transcription-processor',
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'index.handler',
-      code: lambda.Code.fromInline(`
-        // プレースホルダーコード - 後で実装
-        const AWS = require('aws-sdk');
-        const dynamodb = new AWS.DynamoDB.DocumentClient();
-        const cloudwatchlogs = new AWS.CloudWatchLogs();
-        
-        exports.handler = async (event) => {
-          console.log('Transcription Event:', JSON.stringify(event));
-          
-          // サンプル: DynamoDBへの保存
-          const timestamp = new Date().toISOString();
-          const conversationId = 'VTS-' + timestamp.split('T')[0] + '-' + Math.floor(Math.random() * 10000);
-          
-          const params = {
-            TableName: process.env.CONVERSATIONS_TABLE,
-            Item: {
-              ConversationID: conversationId,
-              ItemTimestamp: 'MSG#' + timestamp,
-              ItemType: 'MESSAGE',
-              TranscriptText: event.transcriptText || 'Test message',
-              Confidence: 0.95,
-              Status: 'PROCESSING'
-            }
-          };
-          
-          try {
-            await dynamodb.put(params).promise();
-            console.log('Saved to DynamoDB');
-          } catch (error) {
-            console.error('DynamoDB error:', error);
-          }
-          
-          return {
-            statusCode: 200,
-            body: JSON.stringify({ 
-              message: 'Transcription processed',
-              conversationId: conversationId
-            }),
-          };
-        };
-      `),
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../backend/lambda/transcription-handler')),
       role: lambdaExecutionRole,
       timeout: cdk.Duration.seconds(60),
       memorySize: 1024,
@@ -228,6 +194,7 @@ export class VtsInfrastructureStack extends cdk.Stack {
         CONVERSATIONS_TABLE: conversationsTable.tableName,
         TRANSCRIPTION_LOG_GROUP: transcriptionLogGroup.logGroupName,
         AUDIO_BUCKET: audioStorageBucket.bucketName,
+        LOG_LEVEL: 'INFO',
       },
     });
 
@@ -236,31 +203,7 @@ export class VtsInfrastructureStack extends cdk.Stack {
       functionName: 'vts-nlp-processor',
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'index.handler',
-      code: lambda.Code.fromInline(`
-        // プレースホルダーコード - 後で実装
-        exports.handler = async (event) => {
-          console.log('NLP Processing Event:', JSON.stringify(event));
-          
-          // Bedrock API呼び出しのサンプル構造
-          const bedrockRequest = {
-            modelId: process.env.BEDROCK_MODEL_ID,
-            prompt: event.text || 'Sample maritime communication text',
-            maxTokens: 1000,
-            temperature: 0.7
-          };
-          
-          // TODO: 実際のBedrock API呼び出しを実装
-          
-          return {
-            statusCode: 200,
-            body: JSON.stringify({ 
-              message: 'NLP processing completed',
-              classification: 'GREEN',
-              suggestedResponse: 'Roger. Proceed to designated anchorage.'
-            }),
-          };
-        };
-      `),
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../backend/lambda/nlp-processor')),
       role: lambdaExecutionRole,
       timeout: cdk.Duration.seconds(120),
       memorySize: 2048,
@@ -274,9 +217,13 @@ export class VtsInfrastructureStack extends cdk.Stack {
     conversationsTable.grantReadWriteData(signalingFunction);
     conversationsTable.grantReadWriteData(transcriptionProcessor);
     conversationsTable.grantReadWriteData(nlpProcessor);
+    connectionsTable.grantReadWriteData(signalingFunction);
+    connectionsTable.grantReadWriteData(transcriptionProcessor);
     
-    // S3への権限付与
+    // S3バケットへの権限付与
+    audioStorageBucket.grantReadWrite(signalingFunction);
     audioStorageBucket.grantReadWrite(transcriptionProcessor);
+    audioStorageBucket.grantReadWrite(nlpProcessor);
 
     // ============================================
     // API Gateway (WebSocket)
@@ -311,6 +258,13 @@ export class VtsInfrastructureStack extends cdk.Stack {
       autoDeploy: true,
     });
 
+    // WebSocket APIのエンドポイントURLを構築
+    const webSocketEndpoint = `https://${webSocketApi.apiId}.execute-api.${this.region}.amazonaws.com/${webSocketStage.stageName}`;
+
+    // Lambda関数にWebSocketエンドポイントを環境変数として追加
+    signalingFunction.addEnvironment('WEBSOCKET_ENDPOINT', webSocketEndpoint);
+    transcriptionProcessor.addEnvironment('WEBSOCKET_ENDPOINT', webSocketEndpoint);
+
     // WebSocket管理権限を追加
     signalingFunction.addToRolePolicy(
       new iam.PolicyStatement({
@@ -334,6 +288,12 @@ export class VtsInfrastructureStack extends cdk.Stack {
       value: conversationsTable.tableName,
       description: 'DynamoDB Conversations Table Name',
       exportName: 'VtsConversationsTableName',
+    });
+
+    new cdk.CfnOutput(this, 'ConnectionsTableName', {
+      value: connectionsTable.tableName,
+      description: 'DynamoDB Connections Table Name',
+      exportName: 'VtsConnectionsTableName',
     });
 
     new cdk.CfnOutput(this, 'AudioBucketName', {
