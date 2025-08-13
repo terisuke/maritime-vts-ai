@@ -48,6 +48,8 @@ export class DatabaseConstruct extends Construct {
     });
 
     // 船舶名による検索用GSI
+    // 注意: DynamoDBはスキーマレスのため、VesselName属性は実行時に動的に追加される
+    // アプリケーションコードでアイテム保存時にVesselName属性を含める必要がある
     table.addGlobalSecondaryIndex({
       indexName: 'VesselNameIndex',
       partitionKey: {
@@ -62,6 +64,7 @@ export class DatabaseConstruct extends Construct {
     });
 
     // 日時による検索用GSI
+    // Date属性は実行時にYYYY-MM-DD形式で追加される
     table.addGlobalSecondaryIndex({
       indexName: 'TimestampIndex',
       partitionKey: {
@@ -76,6 +79,7 @@ export class DatabaseConstruct extends Construct {
     });
 
     // 分類による検索用GSI
+    // Classification属性は実行時にGREEN/AMBER/RED値で追加される
     table.addGlobalSecondaryIndex({
       indexName: 'ClassificationIndex',
       partitionKey: {
@@ -158,12 +162,12 @@ export class DatabaseConstruct extends Construct {
 
     // CloudWatchアラーム作成は親スタックで実装
     new cdk.CfnOutput(this, 'ConversationsThrottleMetric', {
-      value: 'UserErrors',
+      value: 'ConsumedReadCapacityUnits',
       description: 'CloudWatch metric for conversations table throttling',
     });
 
     new cdk.CfnOutput(this, 'ConnectionsThrottleMetric', {
-      value: 'UserErrors', 
+      value: 'ConsumedWriteCapacityUnits', 
       description: 'CloudWatch metric for connections table throttling',
     });
   }
