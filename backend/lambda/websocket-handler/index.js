@@ -6,7 +6,7 @@
 
 const ConnectionManager = require('./connection-manager');
 const MessageRouter = require('./message-router');
-const Logger = require('../shared/logger');
+const Logger = require('./shared/logger');
 
 // グローバルインスタンス（Lambda実行環境での再利用）
 let connectionManager;

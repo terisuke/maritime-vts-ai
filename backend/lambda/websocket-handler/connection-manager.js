@@ -3,8 +3,8 @@
  * WebSocket接続の管理とDynamoDBへの永続化を担当
  */
 
-const dynamodbClient = require('../shared/dynamodb-client');
-const Logger = require('../shared/logger');
+const dynamodbClient = require('./shared/dynamodb-client');
+const Logger = require('./shared/logger');
 
 class ConnectionManager {
   constructor() {
