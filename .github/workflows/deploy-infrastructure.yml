@@ -9,6 +9,8 @@ on:
 env:
   AWS_REGION: ap-northeast-1
   NODE_VERSION: '20'
+  GITHUB_ORG: terisuke  # GitHub組織/ユーザー名を環境変数として設定
+  GITHUB_REPO: maritime-vts-ai  # リポジトリ名を環境変数として設定
 
 permissions:
   id-token: write
@@ -49,16 +51,13 @@ jobs:
           cd infrastructure
           npx cdk synth
 
-      - name: Deploy to AWS (main branch only)
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      - name: Deploy All Stacks
         run: |
           cd infrastructure
           npx cdk deploy --all --require-approval never
 
-      - name: Show stack outputs
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      - name: Display Outputs
         run: |
-          aws cloudformation describe-stacks \
-            --stack-name VtsInfrastructureStack \
-            --query 'Stacks[0].Outputs' \
-            --output table
+          cd infrastructure
+          npx cdk list
+          echo "Deployment completed successfully!"
