@@ -1,0 +1,61 @@
+name: Manual Deploy (Temporary)
+
+on:
+  workflow_dispatch:
+    inputs:
+      stack:
+        description: 'Stack to deploy'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - VtsOidcProviderStack
+          - VtsInfrastructureStack
+
+env:
+  AWS_REGION: ap-northeast-1
+  NODE_VERSION: '20'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: infrastructure/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd infrastructure
+          npm ci
+
+      - name: Build TypeScript
+        run: |
+          cd infrastructure
+          npm run build
+
+      - name: Run CDK Synth
+        run: |
+          cd infrastructure
+          npx cdk synth
+
+      - name: Display Deploy Instructions
+        run: |
+          echo "==============================================="
+          echo "Manual Deployment Required"
+          echo "==============================================="
+          echo ""
+          echo "Due to OIDC configuration issues, please run the following command locally:"
+          echo ""
+          echo "cd infrastructure"
+          echo "npx cdk deploy --all --require-approval never"
+          echo ""
+          echo "Make sure you have AWS credentials configured locally."
+          echo "==============================================="
