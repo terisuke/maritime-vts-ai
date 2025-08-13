@@ -169,7 +169,8 @@ class MessageRouter {
       ItemType: 'TRANSCRIPTION_SESSION',
       ConnectionID: connectionId,
       Status: 'STARTED',
-      Language: payload.language || 'ja-JP',
+      Language: payload.languageCode || payload.language || 'ja-JP',
+      VocabularyName: payload.vocabularyName || 'maritime-vts-vocabulary',
       SampleRate: payload.sampleRate || 16000,
       StartedAt: new Date().toISOString()
     };
@@ -178,7 +179,8 @@ class MessageRouter {
 
     // クライアントに開始確認を送信
     await this.sendToConnection(connectionId, {
-      type: 'transcriptionStarted',
+      type: 'status',
+      message: 'Transcription started',
       sessionId: sessionId,
       timestamp: new Date().toISOString()
     });
@@ -186,7 +188,8 @@ class MessageRouter {
     this.logger.audit('TRANSCRIPTION_STARTED', {
       connectionId,
       sessionId,
-      language: sessionData.Language
+      language: sessionData.Language,
+      vocabularyName: sessionData.VocabularyName
     });
 
     return { statusCode: 200, body: 'Transcription started' };
@@ -201,26 +204,27 @@ class MessageRouter {
   async handleStopTranscription(connectionId, payload) {
     this.logger.info('Stopping transcription', { connectionId, payload });
 
-    const sessionId = payload.sessionId;
+    const sessionId = payload.sessionId || `TRANS-${connectionId}`;
     
-    if (!sessionId) {
-      await this.sendError(connectionId, 'Session ID is required');
-      return { statusCode: 400, body: 'Session ID is required' };
+    // セッション情報が存在する場合は更新
+    try {
+      await dynamodbClient.updateItem(
+        this.conversationsTable,
+        { ConversationID: sessionId, ItemTimestamp: `SESSION#${sessionId}` },
+        {
+          Status: 'STOPPED',
+          StoppedAt: new Date().toISOString()
+        }
+      );
+    } catch (error) {
+      // セッションが存在しない場合もエラーにしない
+      this.logger.debug('Session not found or already stopped', { sessionId });
     }
-
-    // セッション情報を更新
-    await dynamodbClient.updateItem(
-      this.conversationsTable,
-      { ConversationID: sessionId, ItemTimestamp: `SESSION#${sessionId}` },
-      {
-        Status: 'STOPPED',
-        StoppedAt: new Date().toISOString()
-      }
-    );
 
     // クライアントに停止確認を送信
     await this.sendToConnection(connectionId, {
-      type: 'transcriptionStopped',
+      type: 'status',
+      message: 'Transcription stopped',
       sessionId: sessionId,
       timestamp: new Date().toISOString()
     });
@@ -241,32 +245,62 @@ class MessageRouter {
    */
   async handleAudioData(connectionId, payload) {
     try {
-      const { sessionId, audioData, sequenceNumber } = payload;
+      // payloadがaudioプロパティを持つ場合（フロントエンドからの形式）
+      const audioData = payload.audio || payload.audioData;
+      const sessionId = payload.sessionId || `TRANS-${connectionId}-${Date.now()}`;
+      const sequenceNumber = payload.sequenceNumber || 0;
 
-      if (!sessionId || !audioData) {
-        await this.sendError(connectionId, 'Session ID and audio data are required');
+      if (!audioData) {
+        await this.sendError(connectionId, 'Audio data is required');
         return { statusCode: 400, body: 'Invalid audio data' };
       }
 
       // Base64デコード
       const audioBuffer = Buffer.from(audioData, 'base64');
 
-      // 音声フォーマットの検証（16kHz, 16bit, mono）
-      // TODO: 実際の音声フォーマット検証ロジックを実装
+      // デバッグ用：S3に音声ファイルを保存（オプション）
+      if (process.env.SAVE_AUDIO_TO_S3 === 'true') {
+        const s3Key = `audio/${sessionId}/${Date.now()}-${sequenceNumber}.raw`;
+        await this.saveAudioToS3(audioBuffer, s3Key);
+      }
 
-      // デバッグ用：S3に音声ファイルを保存
-      const s3Key = `audio/${sessionId}/${Date.now()}-${sequenceNumber || 0}.raw`;
-      await this.saveAudioToS3(audioBuffer, s3Key);
-
-      // 音声データを処理に送信（現在はプレースホルダー）
-      // TODO: Transcribe Streamingへの転送を実装
-
-      this.logger.debug('Audio data processed', {
+      this.logger.debug('Audio data received', {
         connectionId,
         sessionId,
         sequenceNumber,
         audioSize: audioBuffer.length
       });
+
+      // 仮の文字起こし結果を送信（Day 6のMVP用）
+      // TODO: Day 7でTranscribe Streamingへの実装に置き換え
+      
+      // 部分的な結果を送信
+      setTimeout(async () => {
+        await this.sendToConnection(connectionId, {
+          type: 'transcription',
+          payload: {
+            transcriptText: '本船は東京湾入口を通過中',
+            confidence: 0.85,
+            timestamp: new Date().toISOString(),
+            isPartial: true,
+            speakerLabel: 'VTS'
+          }
+        });
+      }, 500);
+
+      // 最終結果を送信
+      setTimeout(async () => {
+        await this.sendToConnection(connectionId, {
+          type: 'transcription',
+          payload: {
+            transcriptText: '本船は東京湾入口を通過中です。現在の速力は12ノット。',
+            confidence: 0.95,
+            timestamp: new Date().toISOString(),
+            isPartial: false,
+            speakerLabel: 'VTS'
+          }
+        });
+      }, 2000);
 
       this.logger.metric('AudioDataProcessed', audioBuffer.length, 'Bytes', {
         sessionId
