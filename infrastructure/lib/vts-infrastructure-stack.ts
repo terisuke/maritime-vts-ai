@@ -5,7 +5,7 @@ import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as apigatewayv2_integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import * as timestream from 'aws-cdk-lib/aws-timestream';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 
 export class VtsInfrastructureStack extends cdk.Stack {
@@ -47,21 +47,18 @@ export class VtsInfrastructureStack extends cdk.Stack {
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
-    // Timestream - 時系列データ用データベース
-    const timestreamDatabase = new timestream.CfnDatabase(this, 'VtsTimestreamDatabase', {
-      databaseName: 'vts-maritime-logs',
+    // CloudWatch Logs - 時系列ログの代替（Timestreamの代わり）
+    const vhfCommunicationLogGroup = new logs.LogGroup(this, 'VhfCommunicationLogGroup', {
+      logGroupName: '/aws/vts/vhf-communications',
+      retention: logs.RetentionDays.THREE_MONTHS, // 3ヶ月保持
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // Timestream テーブル - VHF通信ログ
-    const timestreamTable = new timestream.CfnTable(this, 'VtsTimestreamTable', {
-      databaseName: timestreamDatabase.databaseName!,
-      tableName: 'vhf-communications',
-      retentionProperties: {
-        memoryStoreRetentionPeriodInHours: 24, // 1日
-        magneticStoreRetentionPeriodInDays: 90, // 90日
-      },
+    const transcriptionLogGroup = new logs.LogGroup(this, 'TranscriptionLogGroup', {
+      logGroupName: '/aws/vts/transcriptions',
+      retention: logs.RetentionDays.THREE_MONTHS,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
-    timestreamTable.addDependency(timestreamDatabase);
 
     // S3 - 音声ファイル保存用
     const audioStorageBucket = new s3.Bucket(this, 'VtsAudioStorageBucket', {
@@ -121,15 +118,20 @@ export class VtsInfrastructureStack extends cdk.Stack {
       })
     );
 
-    // Timestream権限を追加
+    // CloudWatch Logs権限を追加
     lambdaExecutionRole.addToPolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: [
-          'timestream:WriteRecords',
-          'timestream:DescribeEndpoints',
+          'logs:CreateLogStream',
+          'logs:PutLogEvents',
         ],
-        resources: ['*'],
+        resources: [
+          vhfCommunicationLogGroup.logGroupArn,
+          transcriptionLogGroup.logGroupArn,
+          `${vhfCommunicationLogGroup.logGroupArn}:*`,
+          `${transcriptionLogGroup.logGroupArn}:*`,
+        ],
       })
     );
 
@@ -142,9 +144,25 @@ export class VtsInfrastructureStack extends cdk.Stack {
         // プレースホルダーコード - 後で実装
         exports.handler = async (event) => {
           console.log('WebRTC Signaling Event:', JSON.stringify(event));
+          
+          // WebSocket接続管理のサンプル
+          const eventType = event.requestContext?.eventType;
+          
+          switch(eventType) {
+            case 'CONNECT':
+              console.log('Client connected:', event.requestContext.connectionId);
+              break;
+            case 'DISCONNECT':
+              console.log('Client disconnected:', event.requestContext.connectionId);
+              break;
+            case 'MESSAGE':
+              console.log('Message received:', event.body);
+              break;
+          }
+          
           return {
             statusCode: 200,
-            body: JSON.stringify({ message: 'Signaling handler placeholder' }),
+            body: JSON.stringify({ message: 'Signaling handler processed' }),
           };
         };
       `),
@@ -153,8 +171,7 @@ export class VtsInfrastructureStack extends cdk.Stack {
       memorySize: 512,
       environment: {
         CONVERSATIONS_TABLE: conversationsTable.tableName,
-        TIMESTREAM_DATABASE: timestreamDatabase.databaseName!,
-        TIMESTREAM_TABLE: timestreamTable.tableName!,
+        VHF_LOG_GROUP: vhfCommunicationLogGroup.logGroupName,
       },
     });
 
@@ -165,12 +182,42 @@ export class VtsInfrastructureStack extends cdk.Stack {
       handler: 'index.handler',
       code: lambda.Code.fromInline(`
         // プレースホルダーコード - 後で実装
+        const AWS = require('aws-sdk');
+        const dynamodb = new AWS.DynamoDB.DocumentClient();
+        const cloudwatchlogs = new AWS.CloudWatchLogs();
+        
         exports.handler = async (event) => {
           console.log('Transcription Event:', JSON.stringify(event));
-          // ここでTranscribeの結果を処理し、DynamoDBに保存
+          
+          // サンプル: DynamoDBへの保存
+          const timestamp = new Date().toISOString();
+          const conversationId = 'VTS-' + timestamp.split('T')[0] + '-' + Math.floor(Math.random() * 10000);
+          
+          const params = {
+            TableName: process.env.CONVERSATIONS_TABLE,
+            Item: {
+              ConversationID: conversationId,
+              ItemTimestamp: 'MSG#' + timestamp,
+              ItemType: 'MESSAGE',
+              TranscriptText: event.transcriptText || 'Test message',
+              Confidence: 0.95,
+              Status: 'PROCESSING'
+            }
+          };
+          
+          try {
+            await dynamodb.put(params).promise();
+            console.log('Saved to DynamoDB');
+          } catch (error) {
+            console.error('DynamoDB error:', error);
+          }
+          
           return {
             statusCode: 200,
-            body: JSON.stringify({ message: 'Transcription processor placeholder' }),
+            body: JSON.stringify({ 
+              message: 'Transcription processed',
+              conversationId: conversationId
+            }),
           };
         };
       `),
@@ -179,8 +226,7 @@ export class VtsInfrastructureStack extends cdk.Stack {
       memorySize: 1024,
       environment: {
         CONVERSATIONS_TABLE: conversationsTable.tableName,
-        TIMESTREAM_DATABASE: timestreamDatabase.databaseName!,
-        TIMESTREAM_TABLE: timestreamTable.tableName!,
+        TRANSCRIPTION_LOG_GROUP: transcriptionLogGroup.logGroupName,
         AUDIO_BUCKET: audioStorageBucket.bucketName,
       },
     });
@@ -194,10 +240,24 @@ export class VtsInfrastructureStack extends cdk.Stack {
         // プレースホルダーコード - 後で実装
         exports.handler = async (event) => {
           console.log('NLP Processing Event:', JSON.stringify(event));
-          // ここでBedrock APIを呼び出し、意図解釈と応答生成
+          
+          // Bedrock API呼び出しのサンプル構造
+          const bedrockRequest = {
+            modelId: process.env.BEDROCK_MODEL_ID,
+            prompt: event.text || 'Sample maritime communication text',
+            maxTokens: 1000,
+            temperature: 0.7
+          };
+          
+          // TODO: 実際のBedrock API呼び出しを実装
+          
           return {
             statusCode: 200,
-            body: JSON.stringify({ message: 'NLP processor placeholder' }),
+            body: JSON.stringify({ 
+              message: 'NLP processing completed',
+              classification: 'GREEN',
+              suggestedResponse: 'Roger. Proceed to designated anchorage.'
+            }),
           };
         };
       `),
@@ -206,7 +266,7 @@ export class VtsInfrastructureStack extends cdk.Stack {
       memorySize: 2048,
       environment: {
         CONVERSATIONS_TABLE: conversationsTable.tableName,
-        BEDROCK_MODEL_ID: 'anthropic.claude-3-sonnet-20240229-v1:0', // 後で最新版に更新
+        BEDROCK_MODEL_ID: 'anthropic.claude-3-sonnet-20240229-v1:0',
       },
     });
 
@@ -282,10 +342,16 @@ export class VtsInfrastructureStack extends cdk.Stack {
       exportName: 'VtsAudioBucketName',
     });
 
-    new cdk.CfnOutput(this, 'TimestreamDatabaseName', {
-      value: timestreamDatabase.databaseName!,
-      description: 'Timestream Database Name',
-      exportName: 'VtsTimestreamDatabaseName',
+    new cdk.CfnOutput(this, 'VhfLogGroupName', {
+      value: vhfCommunicationLogGroup.logGroupName,
+      description: 'CloudWatch Log Group for VHF Communications',
+      exportName: 'VtsVhfLogGroupName',
+    });
+
+    new cdk.CfnOutput(this, 'TranscriptionLogGroupName', {
+      value: transcriptionLogGroup.logGroupName,
+      description: 'CloudWatch Log Group for Transcriptions',
+      exportName: 'VtsTranscriptionLogGroupName',
     });
   }
 }
