@@ -87,9 +87,10 @@ export class StorageConstruct extends Construct {
             },
           ],
           
-          // 1年後に削除（本番環境では要検討）
+          // 400日後に削除（本番環境では要検討）
+          // 注意: ExpirationはすべてのTransitionより大きい必要がある
           expiration: props.environment !== 'prod' 
-            ? cdk.Duration.days(365) 
+            ? cdk.Duration.days(400) 
             : undefined,
         },
         
