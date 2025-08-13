@@ -31,12 +31,6 @@ const AudioRecorder: React.FC = () => {
     }
   }, [isRecording, startRecording, stopRecording, error]);
 
-  // 音声レベルインジケーターの色を決定
-  const getAudioLevelColor = () => {
-    if (audioLevel > 0.7) return 'bg-red-500';
-    if (audioLevel > 0.4) return 'bg-yellow-500';
-    return 'bg-green-500';
-  };
 
   // 音声レベルバーの数を計算
   const getAudioBars = () => {
@@ -46,11 +40,11 @@ const AudioRecorder: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col items-center space-y-4">
+    <div className="flex flex-col items-center space-y-4 p-4">
       <div className="flex items-center justify-center space-x-4">
         <button
           onClick={handleToggleRecording}
-          className={`px-8 py-4 rounded-full font-semibold text-lg transition-all duration-300 flex items-center space-x-3 shadow-lg ${
+          className={`px-6 py-3 rounded-full font-semibold text-base transition-all duration-300 flex items-center space-x-2 shadow-lg ${
             isRecording
               ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
               : 'bg-blue-600 hover:bg-blue-700 text-white hover:scale-105'
@@ -58,16 +52,12 @@ const AudioRecorder: React.FC = () => {
         >
           {isRecording ? (
             <>
-              <span className="w-4 h-4 bg-white rounded-full animate-pulse" />
-              <span>録音停止</span>
+              <span className="w-3 h-3 bg-white rounded-full animate-pulse" />
+              <span>🔴 録音停止</span>
             </>
           ) : (
             <>
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
-                <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
-              </svg>
-              <span>録音開始</span>
+              <span>🎙️ 録音開始</span>
             </>
           )}
         </button>
@@ -104,14 +94,6 @@ const AudioRecorder: React.FC = () => {
               />
             ))}
           </div>
-          
-          {/* プログレスバー式メーター */}
-          <div className="mt-2 w-full h-2 bg-gray-700 rounded-full overflow-hidden">
-            <div 
-              className={`h-full transition-all duration-100 ${getAudioLevelColor()}`}
-              style={{ width: `${audioLevel * 100}%` }}
-            />
-          </div>
         </div>
       )}
       
@@ -126,12 +108,7 @@ const AudioRecorder: React.FC = () => {
       {/* エラー表示 */}
       {error && (
         <div className="bg-red-900 bg-opacity-50 border border-red-500 text-red-200 px-4 py-2 rounded-lg text-sm">
-          <div className="flex items-center space-x-2">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-            </svg>
-            <span>{error}</span>
-          </div>
+          <span>⚠️ {error}</span>
         </div>
       )}
       
