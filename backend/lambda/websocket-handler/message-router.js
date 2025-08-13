@@ -8,6 +8,7 @@ const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const Logger = require('./shared/logger');
 const dynamodbClient = require('./shared/dynamodb-client');
 const TranscribeProcessor = require('./shared/transcribe-processor');
+const BedrockProcessor = require('./shared/bedrock-processor');
 
 class MessageRouter {
   constructor(endpoint) {
@@ -31,6 +32,9 @@ class MessageRouter {
     this.transcribeProcessor.onTranscriptionResult = async (connectionId, result) => {
       await this.handleTranscriptionResult(connectionId, result);
     };
+
+    // Bedrock Processor初期化
+    this.bedrockProcessor = new BedrockProcessor();
 
     this.audioBucket = process.env.AUDIO_BUCKET || 'vts-audio-storage';
     this.conversationsTable = process.env.CONVERSATIONS_TABLE || 'vts-conversations';
@@ -325,12 +329,13 @@ class MessageRouter {
           confidence: result.confidence,
           timestamp: result.timestamp,
           isPartial: result.isPartial,
-          speakerLabel: 'VTS' // TODO: 将来的に話者識別を実装
+          speakerLabel: 'VTS'
         }
       });
 
-      // 完全な文字起こしの場合、会話履歴に保存
-      if (!result.isPartial && result.text.length > 0) {
+      // 完全な文字起こしの場合、AI処理を実行
+      if (!result.isPartial && result.text && result.text.length > 2) {
+        // 会話履歴を保存
         const transcriptionItem = {
           ConversationID: `CONN-${connectionId}`,
           ItemTimestamp: `TRANS#${result.timestamp}`,
@@ -343,14 +348,61 @@ class MessageRouter {
 
         await dynamodbClient.putItem(this.conversationsTable, transcriptionItem);
 
-        this.logger.info('Transcription saved', {
+        this.logger.info('Transcription saved, processing with AI', {
           connectionId,
           textLength: result.text.length,
           confidence: result.confidence
         });
 
-        // TODO: Day 8でBedrock AIに送信
-        // await this.processWithAI(connectionId, result.text);
+        // Bedrockで分析（緊急性を自動判定）
+        const aiResponse = await this.bedrockProcessor.generateEmergencyResponse(result.text);
+        
+        // 非緊急の場合は詳細分析も実行
+        if (!aiResponse.isEmergency) {
+          const detailedResponse = await this.bedrockProcessor.processVTSCommunication(
+            result.text,
+            {
+              location: '博多港',
+              timestamp: new Date().toISOString(),
+              connectionId: connectionId,
+              vesselInfo: '未特定'
+            }
+          );
+          // 詳細分析の結果をマージ
+          Object.assign(aiResponse, detailedResponse);
+        }
+        
+        // AI応答をクライアントに送信
+        await this.sendToConnection(connectionId, {
+          type: 'aiResponse',
+          payload: aiResponse
+        });
+
+        // AI応答を保存
+        const aiResponseItem = {
+          ConversationID: `CONN-${connectionId}`,
+          ItemTimestamp: `AI#${aiResponse.timestamp}`,
+          ItemType: 'AI_RESPONSE',
+          ConnectionID: connectionId,
+          Classification: aiResponse.classification,
+          SuggestedResponse: aiResponse.suggestedResponse,
+          Confidence: aiResponse.confidence,
+          RiskFactors: aiResponse.riskFactors,
+          RecommendedActions: aiResponse.recommendedActions,
+          Timestamp: aiResponse.timestamp
+        };
+
+        await dynamodbClient.putItem(this.conversationsTable, aiResponseItem);
+
+        this.logger.info('AI response sent', {
+          connectionId,
+          classification: aiResponse.classification,
+          confidence: aiResponse.confidence
+        });
+
+        this.logger.metric('AIResponsesSent', 1, 'Count', {
+          classification: aiResponse.classification
+        });
       }
 
       this.logger.metric('TranscriptionsSent', 1, 'Count', {
@@ -455,6 +507,44 @@ class MessageRouter {
       });
     } catch (error) {
       this.logger.error('Failed to send error message', error);
+    }
+  }
+
+  /**
+   * 会話履歴を保存
+   * @param {string} connectionId - WebSocket接続ID
+   * @param {string} transcriptText - 文字起こしテキスト
+   * @param {Object} aiResponse - AI応答
+   * @returns {Promise<void>}
+   */
+  async saveConversation(connectionId, transcriptText, aiResponse) {
+    try {
+      // 会話履歴を保存
+      const conversationItem = {
+        ConversationID: `CONV-${connectionId}-${Date.now()}`,
+        ItemTimestamp: `FULL#${new Date().toISOString()}`,
+        ItemType: 'CONVERSATION',
+        ConnectionID: connectionId,
+        TranscriptText: transcriptText,
+        Classification: aiResponse.classification,
+        SuggestedResponse: aiResponse.suggestedResponse,
+        Confidence: aiResponse.confidence,
+        RiskFactors: aiResponse.riskFactors || [],
+        RecommendedActions: aiResponse.recommendedActions || [],
+        Timestamp: new Date().toISOString(),
+        TTL: Math.floor(Date.now() / 1000) + 86400 * 30 // 30日間保存
+      };
+
+      await dynamodbClient.putItem(this.conversationsTable, conversationItem);
+
+      this.logger.info('Conversation saved', {
+        connectionId,
+        classification: aiResponse.classification
+      });
+
+    } catch (error) {
+      this.logger.error('Failed to save conversation', error);
+      // 保存失敗は処理の失敗とはしない
     }
   }
 }
