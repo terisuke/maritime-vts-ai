@@ -1,0 +1,35 @@
+{
+  "name": "maritime-vts-ai",
+  "version": "0.1.0",
+  "description": "AI Maritime VTS Support System - MVP Implementation",
+  "private": true,
+  "scripts": {
+    "cdk": "cd infrastructure && cdk",
+    "cdk:bootstrap": "cd infrastructure && cdk bootstrap",
+    "cdk:deploy": "cd infrastructure && cdk deploy",
+    "cdk:destroy": "cd infrastructure && cdk destroy",
+    "cdk:synth": "cd infrastructure && cdk synth",
+    "backend:test": "cd backend && npm test",
+    "frontend:dev": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm run build",
+    "install:all": "npm install && cd infrastructure && npm install && cd ../backend && npm install && cd ../frontend && npm install"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/[your-org]/maritime-vts-ai.git"
+  },
+  "keywords": [
+    "vts",
+    "maritime",
+    "ai",
+    "aws",
+    "serverless",
+    "webrtc"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
