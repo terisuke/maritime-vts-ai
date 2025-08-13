@@ -125,11 +125,11 @@ export class ComputeConstruct extends Construct {
           effect: iam.Effect.ALLOW,
           actions: [
             'bedrock:InvokeModel',
+            'bedrock:InvokeModelWithResponseStream',
             'bedrock:ListFoundationModels',
+            'bedrock:GetFoundationModel',
           ],
-          resources: [
-            `arn:aws:bedrock:*::foundation-model/${VtsConfiguration.AI_CONFIG.BEDROCK_MODEL_ID}`,
-          ],
+          resources: ['*'], // すべてのBedrockモデルへのアクセスを許可
         }),
 
         // API Gateway Management権限（WebSocket）

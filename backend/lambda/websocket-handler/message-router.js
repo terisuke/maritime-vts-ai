@@ -71,18 +71,21 @@ class MessageRouter {
       });
 
       // アクションに基づいてルーティング
+      // 注意：payloadフィールドが存在しない場合は、message全体をpayloadとして扱う
+      const payload = message.payload || message;
+      
       switch (message.action) {
         case 'message':
-          return await this.handleMessage(connectionId, message.payload);
+          return await this.handleMessage(connectionId, payload);
         
         case 'startTranscription':
-          return await this.handleStartTranscription(connectionId, message.payload);
+          return await this.handleStartTranscription(connectionId, payload);
         
         case 'stopTranscription':
-          return await this.handleStopTranscription(connectionId, message.payload);
+          return await this.handleStopTranscription(connectionId, payload);
         
         case 'audioData':
-          return await this.handleAudioData(connectionId, message.payload);
+          return await this.handleAudioData(connectionId, payload);
         
         case 'ping':
           return await this.handlePing(connectionId);
@@ -132,14 +135,19 @@ class MessageRouter {
   async handleMessage(connectionId, payload) {
     this.logger.info('Handling message', { connectionId, payload });
 
+    // メッセージテキストを取得（textまたはcontentフィールドから）
+    const messageText = payload.text || payload.content || '';
+    
     // メッセージを会話履歴に保存
     const conversationItem = {
       ConversationID: `CONN-${connectionId}`,
       ItemTimestamp: `MSG#${new Date().toISOString()}`,
       ItemType: 'MESSAGE',
       ConnectionID: connectionId,
-      MessageContent: payload.content || '',
+      MessageContent: messageText,
       MessageType: payload.type || 'text',
+      VesselInfo: payload.vesselInfo || {},
+      Priority: payload.priority || 'NORMAL',
       Timestamp: new Date().toISOString()
     };
 
@@ -152,11 +160,48 @@ class MessageRouter {
       timestamp: conversationItem.Timestamp
     });
 
+    // BedrockによるAI処理（メッセージテキストがある場合）
+    if (messageText && this.bedrockProcessor) {
+      try {
+        // AI応答を生成
+        const aiResponse = await this.bedrockProcessor.processVTSCommunication(
+          messageText, 
+          {
+            connectionId,
+            vesselInfo: payload.vesselInfo,
+            priority: payload.priority,
+            location: payload.vesselInfo?.position || '博多港',
+            timestamp: new Date().toISOString()
+          }
+        );
+
+        // AI応答をクライアントに送信
+        await this.sendToConnection(connectionId, {
+          type: 'AI_RESPONSE',
+          classification: aiResponse.classification,
+          suggestedResponse: aiResponse.suggestedResponse,
+          confidence: aiResponse.confidence,
+          riskFactors: aiResponse.riskFactors,
+          recommendedActions: aiResponse.recommendedActions,
+          timestamp: aiResponse.timestamp
+        });
+
+        this.logger.info('AI response sent', {
+          connectionId,
+          classification: aiResponse.classification,
+          confidence: aiResponse.confidence
+        });
+      } catch (aiError) {
+        this.logger.error('AI processing failed', aiError);
+        // AIエラーはフォールバックで処理（メッセージ自体は成功）
+      }
+    }
+
     this.logger.metric('MessagesProcessed', 1, 'Count', {
       messageType: payload.type || 'text'
     });
 
-    return { statusCode: 200, body: 'Message processed' };
+    return { statusCode: 200, body: JSON.stringify({ success: true }) };
   }
 
   /**
@@ -184,7 +229,7 @@ class MessageRouter {
         ConnectionID: connectionId,
         Status: 'STARTED',
         Language: languageCode,
-        VocabularyName: process.env.TRANSCRIBE_VOCABULARY_NAME || 'maritime-vts-vocabulary-ja',
+        // VocabularyName: process.env.TRANSCRIBE_VOCABULARY_NAME || 'maritime-vts-vocabulary-ja', // TODO: ボキャブラリー作成後に有効化
         SampleRate: payload.sampleRate || 16000,
         StartedAt: new Date().toISOString()
       };

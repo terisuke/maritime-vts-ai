@@ -51,13 +51,14 @@ class TranscribeProcessor {
         // NumberOfChannels は EnableChannelIdentification が true の場合のみ必要
       };
 
-      // カスタム語彙がある場合は追加
-      if (process.env.TRANSCRIBE_VOCABULARY_NAME) {
-        params.VocabularyName = process.env.TRANSCRIBE_VOCABULARY_NAME;
-        this.logger.info('Using custom vocabulary', { 
-          vocabularyName: params.VocabularyName 
-        });
-      }
+      // カスタム語彙がある場合は追加（現在は無効化）
+      // TODO: カスタムボキャブラリーを作成後に有効化
+      // if (process.env.TRANSCRIBE_VOCABULARY_NAME) {
+      //   params.VocabularyName = process.env.TRANSCRIBE_VOCABULARY_NAME;
+      //   this.logger.info('Using custom vocabulary', { 
+      //     vocabularyName: params.VocabularyName 
+      //   });
+      // }
 
       const command = new StartStreamTranscriptionCommand(params);
 
@@ -74,8 +75,8 @@ class TranscribeProcessor {
       
       this.logger.info('Transcribe session started', { 
         connectionId, 
-        languageCode,
-        vocabularyName: params.VocabularyName 
+        languageCode
+        // vocabularyName: params.VocabularyName  // TODO: ボキャブラリー作成後に有効化
       });
 
       // Transcribe結果の処理を非同期で開始
