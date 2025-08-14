@@ -458,8 +458,8 @@ describe('E2E音声処理フロー', () => {
 
 ## 📞 問い合わせ先
 
-技術的な質問: tech-lead@maritime-vts.jp  
-ビジネス関連: product@maritime-vts.jp  
-緊急対応: emergency@maritime-vts.jp
+技術的な質問: company@cor-jp.com  
+ビジネス関連: company@cor-jp.com  
+緊急対応: company@cor-jp.com
 
 最終更新: 2025年8月14日
