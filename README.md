@@ -13,7 +13,8 @@
 - **リアルタイムストリーミング**: WebSocket経由で音声データを継続的に処理
 
 ### AI支援機能
-- **インテリジェント応答生成**: Amazon Bedrock Claude Sonnet 4による状況分析と応答案作成
+- **インテリジェント応答生成**: Amazon Bedrock Claude Sonnet 4（2025年5月版）による状況分析と応答案作成
+- **自動応答システム**: 発話終了を自動検知し、録音停止不要で即座にAI応答を生成
 - **リスク自動分類**: 通信内容を3段階（GREEN/AMBER/RED）で自動分類
 - **コンテキスト認識**: 会話履歴を考慮した適切な応答の生成
 - **多言語対応準備**: 今後英語・中国語・韓国語の対応予定
@@ -30,6 +31,7 @@
 - **API Gateway WebSocket**: リアルタイム双方向通信
 - **Amazon Transcribe**: ストリーミング音声認識（カスタム語彙対応）
 - **Amazon Bedrock**: Claude Sonnet 4（2025年5月版）による自然言語処理
+  - Model ID: `anthropic.claude-sonnet-4-20250514-v1:0`
 - **DynamoDB**: 会話履歴・接続管理（NoSQL）
 - **Amazon Timestream**: 時系列データ分析
 - **AWS CDK v2**: Infrastructure as Code（TypeScript）
