@@ -6,8 +6,8 @@ interface AIResponsePanelProps {
 }
 
 const AIResponsePanel: React.FC<AIResponsePanelProps> = ({ response }) => {
-  // デフォルトをOFFに変更（エコー問題防止のため）
-  const [isAutoSpeak, setIsAutoSpeak] = useState(false);
+  // デフォルトをONに変更（緊急時応答遅延防止のため）
+  const [isAutoSpeak, setIsAutoSpeak] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   // グローバル録音状態の管理
