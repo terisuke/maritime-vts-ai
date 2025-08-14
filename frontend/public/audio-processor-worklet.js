@@ -5,6 +5,7 @@ class AudioPCMProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.isRecording = false;
+    this.isPaused = false; // 一時停止フラグ追加
     this.buffer = [];
     this.bufferSize = 4096; // 256ms分のバッファ (16kHz * 0.256s)
     this.processCallCount = 0;
@@ -15,13 +16,21 @@ class AudioPCMProcessor extends AudioWorkletProcessor {
       
       if (event.data.command === 'start') {
         this.isRecording = true;
+        this.isPaused = false;
         this.processCallCount = 0;
         this.buffer = [];
         console.log('AudioWorklet: Recording STARTED immediately');
       } else if (event.data.command === 'stop') {
         this.isRecording = false;
+        this.isPaused = false;
         this.flushBuffer(); // 停止時に残りのバッファを送信
         console.log('AudioWorklet: Recording STOPPED by command');
+      } else if (event.data.command === 'pause') {
+        this.isPaused = true;
+        console.log('AudioWorklet: Recording PAUSED');
+      } else if (event.data.command === 'resume') {
+        this.isPaused = false;
+        console.log('AudioWorklet: Recording RESUMED');
       }
     };
     
@@ -71,11 +80,11 @@ class AudioPCMProcessor extends AudioWorkletProcessor {
     // 最初の5回のprocess呼び出しをデバッグ
     this.processCallCount++;
     if (this.processCallCount <= 5) {
-      console.log(`AudioWorklet: process() call #${this.processCallCount}, inputs:`, inputs, 'isRecording:', this.isRecording);
+      console.log(`AudioWorklet: process() call #${this.processCallCount}, inputs:`, inputs, 'isRecording:', this.isRecording, 'isPaused:', this.isPaused);
     }
     
-    // 録音中でない場合は処理をスキップ
-    if (!this.isRecording) {
+    // 録音中でない、または一時停止中の場合は処理をスキップ
+    if (!this.isRecording || this.isPaused) {
       return true;
     }
     

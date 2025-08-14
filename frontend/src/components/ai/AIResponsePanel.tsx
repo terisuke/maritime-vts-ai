@@ -10,8 +10,20 @@ const AIResponsePanel: React.FC<AIResponsePanelProps> = ({ response }) => {
   const [isAutoSpeak, setIsAutoSpeak] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
+  // グローバル録音状態の管理
+  useEffect(() => {
+    // 音声出力状態をグローバルに公開
+    (window as any).isSpeaking = isSpeaking;
+  }, [isSpeaking]);
+
   // 音声合成関数
   const speak = (text: string) => {
+    // 録音中なら一時停止を通知
+    if ((window as any).isRecording) {
+      console.log('音声出力開始のため録音を一時停止');
+      (window as any).pauseRecording?.();
+    }
+    
     // 既存の音声を停止
     window.speechSynthesis.cancel();
     
@@ -28,9 +40,24 @@ const AIResponsePanel: React.FC<AIResponsePanelProps> = ({ response }) => {
       utterance.voice = japaneseVoice;
     }
     
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+      // エコー防止フラグ
+      (window as any).blockRecording = true;
+    };
+    
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      // エコー防止フラグ解除
+      (window as any).blockRecording = false;
+      // 録音再開を通知
+      (window as any).resumeRecording?.();
+    };
+    
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      (window as any).blockRecording = false;
+    };
     
     window.speechSynthesis.speak(utterance);
   };

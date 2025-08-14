@@ -49,13 +49,14 @@ export const useAudioRecorder = (onAudioData: (data: string) => void): UseAudioR
       setError(null);
       console.log('音声録音を開始します（PCM形式 - AudioWorklet）...');
       
-      // マイクへのアクセス許可を取得
+      // マイクへのアクセス許可を取得（エコーキャンセレーション設定を最適化）
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          channelCount: 1
+          echoCancellation: true,    // エコーキャンセレーション有効
+          noiseSuppression: true,    // ノイズ抑制有効
+          autoGainControl: true,     // 自動ゲイン制御有効
+          channelCount: 1,
+          sampleRate: 16000
         } 
       });
       
@@ -100,16 +101,22 @@ export const useAudioRecorder = (onAudioData: (data: string) => void): UseAudioR
       // AudioWorkletNode を作成
       workletRef.current = new AudioWorkletNode(audioContextRef.current, 'audio-pcm-processor');
       
-      // AudioWorkletからのメッセージを処理 (isRecordingを常にtrueにして確認)
+      // AudioWorkletからのメッセージを処理
       workletRef.current.port.onmessage = (event) => {
         console.log('AudioWorkletからメッセージ受信:', event.data.type, 'currentIsRecording:', isRecording);
+        
+        // エコー防止チェック
+        if ((window as any).blockRecording) {
+          console.log('音声出力中のため音声データをスキップ');
+          return;
+        }
         
         if (event.data.type === 'audioData') {
           const pcmData = event.data.data; // Int16Array
           
           console.log('PCMデータを処理開始:', pcmData.length, 'samples');
           
-          // PCMデータをBase64に変換して送信 (isRecording チェックを一時的に無効化)
+          // PCMデータをBase64に変換して送信
           const uint8Array = new Uint8Array(pcmData.buffer);
           const base64 = btoa(String.fromCharCode(...uint8Array));
           
@@ -222,6 +229,30 @@ export const useAudioRecorder = (onAudioData: (data: string) => void): UseAudioR
       stopRecording();
     };
   }, [stopRecording]);
+
+  // グローバル録音状態の公開
+  useEffect(() => {
+    (window as any).isRecording = isRecording;
+    
+    // 録音一時停止/再開関数の提供
+    (window as any).pauseRecording = () => {
+      if (workletRef.current && isRecording) {
+        workletRef.current.port.postMessage({ command: 'pause' });
+      }
+    };
+    
+    (window as any).resumeRecording = () => {
+      if (workletRef.current && isRecording && !(window as any).blockRecording) {
+        workletRef.current.port.postMessage({ command: 'resume' });
+      }
+    };
+    
+    return () => {
+      delete (window as any).isRecording;
+      delete (window as any).pauseRecording;
+      delete (window as any).resumeRecording;
+    };
+  }, [isRecording]);
 
   return { 
     isRecording, 
