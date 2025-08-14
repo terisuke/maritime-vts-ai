@@ -5,6 +5,10 @@ import { DatabaseConstruct } from './constructs/database-construct';
 import { StorageConstruct } from './constructs/storage-construct';
 import { ComputeConstruct } from './constructs/compute-construct';
 import { ApiConstruct } from './constructs/api-construct';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 
 export interface VtsInfrastructureStackProps extends cdk.StackProps {
   readonly environment?: 'dev' | 'staging' | 'prod';
@@ -15,6 +19,8 @@ export class VtsInfrastructureStack extends cdk.Stack {
   public readonly storage: StorageConstruct;
   public readonly compute: ComputeConstruct;
   public readonly api: ApiConstruct;
+  public readonly frontendBucket: s3.Bucket;
+  public readonly distribution: cloudfront.Distribution;
 
   constructor(scope: Construct, id: string, props?: VtsInfrastructureStackProps) {
     super(scope, id, props);
@@ -54,6 +60,78 @@ export class VtsInfrastructureStack extends cdk.Stack {
       environment,
       webSocketHandler: this.compute.webSocketHandler,
     });
+
+    // ============================================
+    // フロントエンドホスティング (S3 + CloudFront)
+    // ============================================
+
+    // フロントエンド用S3バケット（OAI用にWebsite設定を削除）
+    this.frontendBucket = new s3.Bucket(this, 'FrontendBucket', {
+      bucketName: `vts-frontend-${this.account}-${this.region}`,
+      publicReadAccess: false,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+      // websiteIndexDocument と websiteErrorDocument を削除（OAI用）
+      cors: [
+        {
+          allowedHeaders: ['*'],
+          allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.HEAD],
+          allowedOrigins: ['*'],
+          exposedHeaders: [],
+        },
+      ],
+    });
+
+    // CloudFront Origin Access Identity (OAI) - CDK v2互換
+    const originAccessIdentity = new cloudfront.OriginAccessIdentity(this, 'FrontendOAI', {
+      comment: 'OAI for VTS Frontend S3 Bucket',
+    });
+
+    // CloudFront ディストリビューション（SPA対応）
+    this.distribution = new cloudfront.Distribution(this, 'FrontendDistribution', {
+      defaultBehavior: {
+        origin: new origins.S3Origin(this.frontendBucket, {
+          originAccessIdentity: originAccessIdentity,
+        }),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
+        cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD_OPTIONS,
+        compress: true,
+        cachePolicy: new cloudfront.CachePolicy(this, 'FrontendCachePolicy', {
+          cachePolicyName: 'VTS-Frontend-CachePolicy',
+          comment: 'Cache policy for VTS Frontend',
+          defaultTtl: cdk.Duration.days(1),
+          maxTtl: cdk.Duration.days(365),
+          minTtl: cdk.Duration.seconds(0),
+          cookieBehavior: cloudfront.CacheCookieBehavior.none(),
+          headerBehavior: cloudfront.CacheHeaderBehavior.none(),
+          queryStringBehavior: cloudfront.CacheQueryStringBehavior.none(),
+        }),
+      },
+      defaultRootObject: 'index.html',
+      errorResponses: [
+        {
+          httpStatus: 403,
+          responseHttpStatus: 200,
+          responsePagePath: '/index.html',
+          ttl: cdk.Duration.minutes(5),
+        },
+        {
+          httpStatus: 404,
+          responseHttpStatus: 200,
+          responsePagePath: '/index.html',
+          ttl: cdk.Duration.minutes(5),
+        },
+      ],
+      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+      comment: 'VTS Frontend Distribution with SPA support',
+      enabled: true,
+      httpVersion: cloudfront.HttpVersion.HTTP2,
+    });
+
+    // S3バケットポリシーでOriginAccessIdentityからのアクセスを許可
+    this.frontendBucket.grantRead(originAccessIdentity);
 
     // ============================================
     // 追加設定
@@ -164,6 +242,27 @@ export class VtsInfrastructureStack extends cdk.Stack {
       value: this.api.webSocketApi.apiId,
       description: 'WebSocket API Gateway ID',
       exportName: `VtsWebSocketApiId-${this.stackName}`,
+    });
+
+    // Frontend URL
+    new cdk.CfnOutput(this, 'FrontendUrl', {
+      value: `https://${this.distribution.distributionDomainName}`,
+      description: 'CloudFront Distribution URL for Frontend',
+      exportName: `VtsFrontendUrl-${this.stackName}`,
+    });
+
+    // Frontend S3 Bucket
+    new cdk.CfnOutput(this, 'FrontendBucketName', {
+      value: this.frontendBucket.bucketName,
+      description: 'S3 Frontend Bucket Name',
+      exportName: `VtsFrontendBucketName-${this.stackName}`,
+    });
+
+    // CloudFront Distribution ID
+    new cdk.CfnOutput(this, 'DistributionId', {
+      value: this.distribution.distributionId,
+      description: 'CloudFront Distribution ID',
+      exportName: `VtsDistributionId-${this.stackName}`,
     });
   }
 }

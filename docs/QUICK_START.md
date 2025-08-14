@@ -1,7 +1,7 @@
 # 🚀 クイックスタートガイド
 
 ## 概要
-福岡港湾VTS AI支援システムを10分で起動し、実際のAI音声認識・応答生成を体験できます。本システムは**完全実装済み**で、Amazon Transcribe、Amazon Bedrock Claude Sonnet 4を活用した本格的な海上交通管制支援が可能です。
+福岡港湾VTS AI支援システムを10分で起動し、実際のAI音声認識・応答生成を体験できます。本システムは**完全実装済み**で、Amazon Transcribe、Amazon Bedrock Claude Sonnet 4（2025年5月リリース最新版）を活用した本格的な海上交通管制支援が可能です。
 
 ## 前提条件
 - Node.js 18以上

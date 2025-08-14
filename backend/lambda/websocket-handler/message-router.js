@@ -177,13 +177,15 @@ class MessageRouter {
 
         // AI応答をクライアントに送信
         await this.sendToConnection(connectionId, {
-          type: 'AI_RESPONSE',
-          classification: aiResponse.classification,
-          suggestedResponse: aiResponse.suggestedResponse,
-          confidence: aiResponse.confidence,
-          riskFactors: aiResponse.riskFactors,
-          recommendedActions: aiResponse.recommendedActions,
-          timestamp: aiResponse.timestamp
+          type: 'aiResponse',
+          payload: {
+            classification: aiResponse.classification,
+            suggestedResponse: aiResponse.suggestedResponse,
+            confidence: aiResponse.confidence,
+            riskFactors: aiResponse.riskFactors,
+            recommendedActions: aiResponse.recommendedActions,
+            timestamp: aiResponse.timestamp
+          }
         });
 
         this.logger.info('AI response sent', {
