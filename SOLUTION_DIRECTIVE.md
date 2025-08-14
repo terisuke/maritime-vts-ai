@@ -1,348 +1,172 @@
-# 音声入力問題 解決指示書
-**作成日**: 2025年8月14日  
-**優先度**: 🔴 CRITICAL
+# 🚨 緊急修正指示書 - Path A: 現行システム修正
 
-## 📊 問題診断結果
+## ⏱️ タイムライン（40分）
+- **11:40** - 修正開始
+- **11:45** - AudioWorklet修正完了
+- **11:55** - バッファリング実装完了
+- **12:05** - デバッグパネル実装完了
+- **12:20** - テスト完了・評価
 
-### 1. 根本原因の特定
+## 🔴 修正1: AudioWorkletのsetTimeout削除（最重要）
 
-#### 🔴 Critical Issue: AudioWorkletの競合状態
-**場所**: `frontend/src/hooks/useAudioRecorder.ts` 146-157行目
-
-```javascript
-// 問題のコード
+### 問題箇所
+```typescript
+// frontend/src/hooks/useAudioRecorder.ts - 129-139行目
 setTimeout(() => {
-  console.log('CRITICAL: setTimeout executing now, workletRef.current:', workletRef.current);
   if (workletRef.current) {
-    console.log('AudioWorkletに開始コマンドを送信');
     workletRef.current.port.postMessage({ command: 'start' });
-    console.log('CRITICAL: Start command sent to AudioWorklet');
-  } else {
-    console.error('CRITICAL: workletRef.current is null in setTimeout!');
   }
-}, 500);
+}, 500); // ← この500msの遅延が問題！
 ```
 
-**問題**: 
-- setTimeoutの500ms遅延中にコンポーネントが再レンダリングされ、refが失われる
-- isRecordingがtrueに設定されても、AudioWorkletがstartコマンドを受信しない
-
-#### 🟡 Issue 2: モデルIDの不一致
-**場所**: 複数のファイル
-- 設定: `apac.anthropic.claude-sonnet-4-20250514-v1:0`
-- 実際に必要: APACリージョンのプレフィックス
-
-#### 🟠 Issue 3: Transcribeセッション管理
-**場所**: `backend/lambda/websocket-handler/shared/transcribe-processor.js`
-- 同時接続数の制限（25ストリーム）にすぐ到達
-- セッションクリーンアップが不十分
-
-## 🛠️ 即座に実施すべき修正
-
-### **Priority 1: AudioWorklet修正（5分）**
-
-#### 修正1: useAudioRecorder.ts
-```javascript
-// frontend/src/hooks/useAudioRecorder.ts の 146行目付近を修正
-
-// 現在のコード（問題あり）
-setTimeout(() => {
-  if (workletRef.current) {
-    workletRef.current.port.postMessage({ command: 'start' });
-  }
-}, 500);
-
-// 修正後のコード
-// setTimeoutを削除し、即座に送信
+### 修正内容
+```typescript
+// 即座に開始コマンドを送信
 if (workletRef.current) {
   workletRef.current.port.postMessage({ command: 'start' });
-  console.log('AudioWorklet start command sent immediately');
+  console.log('CRITICAL: Start command sent to AudioWorklet immediately');
 }
 ```
 
-#### 修正2: audio-processor-worklet.js
+## 🔵 修正2: AudioWorkletバッファリング実装
+
+### audio-processor-worklet.js の修正
 ```javascript
-// frontend/public/audio-processor-worklet.js の constructor を修正
-
-constructor() {
-  super();
-  this.isRecording = false;
-  this.processCallCount = 0;
-  this.bufferSize = 4096; // バッファサイズを追加
-  this.audioBuffer = []; // バッファリング追加
-  
-  console.log('AudioWorklet: Constructor called - AudioPCMProcessor initialized');
-  
-  this.port.onmessage = (event) => {
-    console.log('AudioWorklet: Message received:', event.data);
+class AudioPCMProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.isRecording = false;
+    this.buffer = [];
+    this.bufferSize = 4096; // 256ms分のバッファ
     
-    if (event.data.command === 'start') {
-      this.isRecording = true;
-      this.audioBuffer = []; // バッファをクリア
-      console.log('AudioWorklet: Recording STARTED');
-    } else if (event.data.command === 'stop') {
-      this.isRecording = false;
-      // 残りのバッファを送信
-      if (this.audioBuffer.length > 0) {
-        this.sendBufferedAudio();
+    this.port.onmessage = (event) => {
+      if (event.data.command === 'start') {
+        this.isRecording = true;
+        console.log('AudioWorklet: Recording STARTED immediately');
+      } else if (event.data.command === 'stop') {
+        this.isRecording = false;
+        this.flushBuffer(); // 停止時にバッファをフラッシュ
       }
-      console.log('AudioWorklet: Recording STOPPED');
-    }
-  };
-}
-
-// 新しいメソッドを追加
-sendBufferedAudio() {
-  if (this.audioBuffer.length === 0) return;
-  
-  const pcmData = new Int16Array(this.audioBuffer);
-  this.port.postMessage({
-    type: 'audioData',
-    data: pcmData
-  });
-  
-  this.audioBuffer = [];
-}
-
-// process メソッドも修正
-process(inputs, outputs, parameters) {
-  if (!this.isRecording) {
-    return true;
+    };
   }
-
-  const input = inputs[0];
-  if (input && input.length > 0) {
-    const channelData = input[0];
+  
+  flushBuffer() {
+    if (this.buffer.length > 0) {
+      const mergedBuffer = this.mergeBuffers(this.buffer);
+      this.port.postMessage({
+        type: 'audioData',
+        data: mergedBuffer
+      });
+      this.buffer = [];
+    }
+  }
+  
+  mergeBuffers(buffers) {
+    const totalLength = buffers.reduce((acc, buf) => acc + buf.length, 0);
+    const merged = new Int16Array(totalLength);
+    let offset = 0;
+    for (const buffer of buffers) {
+      merged.set(buffer, offset);
+      offset += buffer.length;
+    }
+    return merged;
+  }
+  
+  process(inputs, outputs, parameters) {
+    if (!this.isRecording) return true;
     
-    if (channelData && channelData.length > 0) {
-      // PCMに変換してバッファに追加
-      for (let i = 0; i < channelData.length; i++) {
-        const clampedValue = Math.max(-1, Math.min(1, channelData[i]));
-        const pcmValue = Math.floor(clampedValue * 32767);
-        this.audioBuffer.push(pcmValue);
+    const input = inputs[0];
+    if (input && input[0]) {
+      const float32Data = input[0];
+      const int16Data = new Int16Array(float32Data.length);
+      
+      for (let i = 0; i < float32Data.length; i++) {
+        const s = Math.max(-1, Math.min(1, float32Data[i]));
+        int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
       }
       
-      // バッファが一定サイズに達したら送信
-      if (this.audioBuffer.length >= this.bufferSize) {
-        this.sendBufferedAudio();
+      this.buffer.push(int16Data);
+      
+      // バッファが満杯になったら送信
+      const totalSamples = this.buffer.reduce((acc, buf) => acc + buf.length, 0);
+      if (totalSamples >= this.bufferSize) {
+        this.flushBuffer();
       }
     }
+    
+    return true;
   }
-  
-  return true;
 }
 ```
 
-### **Priority 2: 簡易デバッグモード実装（10分）**
+## 🟢 修正3: デバッグパネル追加
 
-#### デバッグコンポーネント作成
+### VHFRadioInterface.tsx に追加
 ```typescript
-// frontend/src/components/debug/AudioDebugPanel.tsx（新規作成）
-import React from 'react';
-
-interface AudioDebugPanelProps {
-  isRecording: boolean;
-  audioLevel: number;
-  connectionStatus: string;
-  lastTranscription?: string;
-  errorLog?: string[];
-}
-
-const AudioDebugPanel: React.FC<AudioDebugPanelProps> = ({
-  isRecording,
-  audioLevel,
-  connectionStatus,
-  lastTranscription,
-  errorLog = []
-}) => {
-  return (
-    <div className="fixed bottom-4 right-4 bg-black bg-opacity-80 text-green-400 p-4 rounded-lg font-mono text-xs max-w-md">
-      <h3 className="text-yellow-400 mb-2">🔧 Debug Panel</h3>
-      <div className="space-y-1">
-        <div>Recording: {isRecording ? '🔴 ON' : '⚫ OFF'}</div>
-        <div>Audio Level: {(audioLevel * 100).toFixed(1)}%</div>
-        <div>WebSocket: {connectionStatus}</div>
-        <div>Last Text: {lastTranscription || 'None'}</div>
-      </div>
-      {errorLog.length > 0 && (
-        <div className="mt-2 text-red-400">
-          <div>Errors:</div>
-          {errorLog.slice(-3).map((err, i) => (
-            <div key={i} className="text-xs">{err}</div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default AudioDebugPanel;
+// デバッグパネルコンポーネント
+const DebugPanel = ({ isRecording, audioLevel, websocketStatus, transcripts }) => (
+  <div className="fixed bottom-0 right-0 bg-black bg-opacity-80 text-green-400 p-4 font-mono text-xs">
+    <div>🎙️ Recording: {isRecording ? 'ON' : 'OFF'}</div>
+    <div>📊 Audio Level: {(audioLevel * 100).toFixed(0)}%</div>
+    <div>🔌 WebSocket: {websocketStatus}</div>
+    <div>📝 Last Transcript: {transcripts[transcripts.length - 1] || 'None'}</div>
+    <div>⏰ Time: {new Date().toISOString()}</div>
+  </div>
+);
 ```
 
-### **Priority 3: テスト音声生成（検証用）**
+## 🎯 テスト手順
 
-#### テストトーン生成追加
+### 1. ブラウザコンソール確認
 ```javascript
-// frontend/src/utils/testAudioGenerator.js（新規作成）
-export function generateTestTone(frequencyHz = 440, durationMs = 1000) {
-  const sampleRate = 16000;
-  const samples = (sampleRate * durationMs) / 1000;
-  const pcmData = new Int16Array(samples);
-  
-  for (let i = 0; i < samples; i++) {
-    const t = i / sampleRate;
-    const value = Math.sin(2 * Math.PI * frequencyHz * t);
-    pcmData[i] = Math.floor(value * 32767);
-  }
-  
-  return pcmData;
-}
-
-// AudioRecorderに追加
-const sendTestTone = () => {
-  const testData = generateTestTone(440, 500);
-  const base64 = btoa(String.fromCharCode(...new Uint8Array(testData.buffer)));
-  websocketService.send({
-    action: 'audioData',
-    payload: { audio: base64 },
-    timestamp: new Date().toISOString()
-  });
-  console.log('Test tone sent:', testData.length, 'samples');
-};
+// 期待される出力
+"AudioWorklet: Recording STARTED immediately"
+"CRITICAL: Start command sent to AudioWorklet immediately"
+"AudioWorklet: Sending PCM data, length = 4096"
 ```
 
-## 🚀 段階的実装手順
-
-### **Phase 1: 緊急修正（今すぐ）**
-
-1. **AudioWorklet修正**
-   ```bash
-   cd frontend
-   # useAudioRecorder.tsの setTimeout削除
-   # audio-processor-worklet.jsのバッファリング追加
-   npm run dev
-   ```
-
-2. **テスト実施**
-   ```bash
-   # ブラウザコンソールで確認
-   # 1. 録音開始
-   # 2. "AudioWorklet: Recording STARTED"を確認
-   # 3. "AudioWorklet: Sending PCM data"を確認
-   ```
-
-### **Phase 2: サーバー側確認（30分以内）**
-
-1. **CloudWatch Logsで確認**
-   ```bash
-   aws logs tail /aws/lambda/vts-websocket-handler --follow | grep -E "(audioData|Transcribe)"
-   ```
-
-2. **Lambda関数の直接テスト**
-   ```bash
-   # test-audio.json作成
-   cat > test-audio.json << EOF
-   {
-     "requestContext": {
-       "connectionId": "test-connection",
-       "routeKey": "\$default"
-     },
-     "body": "{\"action\":\"startTranscription\",\"payload\":{\"languageCode\":\"ja-JP\"}}"
-   }
-   EOF
-   
-   # テスト実行
-   aws lambda invoke \
-     --function-name vts-websocket-handler \
-     --payload file://test-audio.json \
-     response.json
-   ```
-
-### **Phase 3: 代替案への移行準備（1時間後に判断）**
-
-もし上記の修正で解決しない場合：
-
-#### **Option A: シンプルなHTTP APIへの切り替え**
-
-```javascript
-// frontend/src/services/simpleTranscriptionService.js
-class SimpleTranscriptionService {
-  async sendAudioForTranscription(audioBlob) {
-    const formData = new FormData();
-    formData.append('audio', audioBlob, 'audio.wav');
-    
-    const response = await fetch('/api/transcribe', {
-      method: 'POST',
-      body: formData
-    });
-    
-    return response.json();
-  }
-}
-```
-
-#### **Option B: AWS Amplify Predictionsへの移行**
-
+### 2. CloudWatchログ確認
 ```bash
-# Amplifyセットアップ
-npm install @aws-amplify/predictions
-
-# 初期化
-amplify init
-amplify add predictions
-amplify push
+aws logs tail /aws/lambda/vts-websocket-handler --follow | grep -E "(chunksProcessed|Transcribe|audioData)"
 ```
 
-## 📊 成功基準
+期待される出力：
+- `chunksProcessed: [1以上の数値]`
+- `Transcribe session started`
+- `Transcription result`
 
-### 30分以内に確認すべき項目
+### 3. フロントエンド確認
+- 音量ゲージが動く
+- デバッグパネルにRecording: ON表示
+- WebSocket: Connected表示
 
-| チェック項目 | 期待される結果 | 確認方法 |
-|------------|--------------|---------|
-| AudioWorklet動作 | isRecording=true | ブラウザコンソール |
-| PCMデータ送信 | chunksProcessed > 0 | CloudWatch Logs |
-| Transcribe応答 | transcriptionResult受信 | WebSocketメッセージ |
-| AI応答 | aiResponse受信 | フロントエンド表示 |
+## ⚠️ 注意事項
 
-## 🔴 最終判断ポイント
+1. **Chrome/Edgeで必ずテスト**（Safariは非推奨）
+2. **HTTPSでアクセス**（マイク権限のため）
+3. **ブラウザキャッシュをクリア**
 
-**1時間後の判断基準**：
-- ✅ 音声データがTranscribeに届いている → 現行システム継続
-- ❌ まだ動作しない → AWS Amplifyへの即座の移行
+## 🚦 成功基準
 
-## 📞 エスカレーション
+✅ 以下が全て確認できれば成功：
+1. `isRecording = true` がコンソールに表示
+2. CloudWatchで `chunksProcessed > 0`
+3. 音声レベルメーターが反応
+4. WebSocketエラーなし
 
-もし1時間で解決しない場合：
+## ❌ 失敗時の対処
 
-1. **AWS Amplify Predictions実装（推奨）**
-   - 実装時間: 2-3時間
-   - 信頼性: 高
-   - コスト: 同等
+40分後に動作しない場合：
+→ **即座にPath B（Amplify移行）へ移行**
 
-2. **Amazon Chime SDK採用**
-   - 実装時間: 4-6時間
-   - 信頼性: 最高
-   - コスト: やや高
+## 📝 修正ファイル一覧
 
-3. **外部サービス（AssemblyAI）**
-   - 実装時間: 1-2時間
-   - 信頼性: 高
-   - コスト: 月額$99〜
-
-## 🎯 開発チームへの指示
-
-**即座に実施**：
-1. AudioWorkletのsetTimeout削除（5分）
-2. バッファリング実装（10分）
-3. デバッグパネル追加（10分）
-4. テスト実施（15分）
-
-**40分後に判断**：
-- 動作する → 現行システムで継続
-- 動作しない → AWS Amplifyへ移行開始
-
-**重要**: 2025年8月の最新情報として、AWS Amplify Predictionsが最も安定した選択肢です。現在のWebSocket + Transcribe Streamingアプローチは技術的に複雑すぎます。
+1. `frontend/src/hooks/useAudioRecorder.ts` - setTimeout削除
+2. `frontend/public/audio-processor-worklet.js` - バッファリング追加
+3. `frontend/src/components/VHFRadioInterface.tsx` - デバッグパネル追加
 
 ---
-**承認者**: システムアーキテクト  
-**実施期限**: 2025年8月14日 17:00まで
+
+**開始時刻**: _____
+**完了予定**: 開始時刻 + 40分
+**判断時刻**: 開始時刻 + 40分

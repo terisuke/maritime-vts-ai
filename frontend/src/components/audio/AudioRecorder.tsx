@@ -1,8 +1,17 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { useAudioRecorder } from '../../hooks/useAudioRecorder';
 import websocketService from '../../services/websocketService';
 
-const AudioRecorder: React.FC = () => {
+interface AudioRecorderProps {
+  onRecordingChange?: (isRecording: boolean) => void;
+  onAudioLevelChange?: (level: number) => void;
+  onChunksProcessedChange?: (chunks: number) => void;
+}
+
+const AudioRecorder: React.FC<AudioRecorderProps> = ({ 
+  onRecordingChange, 
+  onAudioLevelChange
+}) => {
   const handleAudioData = useCallback((base64Data: string) => {
     websocketService.send({
       action: 'audioData',
@@ -18,6 +27,15 @@ const AudioRecorder: React.FC = () => {
     stopRecording, 
     error 
   } = useAudioRecorder(handleAudioData);
+
+  // Notify parent component of state changes
+  useEffect(() => {
+    onRecordingChange?.(isRecording);
+  }, [isRecording, onRecordingChange]);
+
+  useEffect(() => {
+    onAudioLevelChange?.(audioLevel);
+  }, [audioLevel, onAudioLevelChange]);
 
   const handleToggleRecording = useCallback(async () => {
     if (isRecording) {

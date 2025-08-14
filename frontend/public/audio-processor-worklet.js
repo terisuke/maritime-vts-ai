@@ -1,105 +1,132 @@
-/**
- * AudioWorklet Processor for PCM audio conversion
- * This runs in the AudioWorklet thread for efficient real-time audio processing
- */
+// audio-processor-worklet.js
+// PCM形式への変換とバッファリングを行うAudioWorkletProcessor
+
 class AudioPCMProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.isRecording = false;
+    this.buffer = [];
+    this.bufferSize = 4096; // 256ms分のバッファ (16kHz * 0.256s)
     this.processCallCount = 0;
     
-    console.log('AudioWorklet: Constructor called - AudioPCMProcessor initialized');
-    
-    // Listen for messages from main thread
+    // メインスレッドからのメッセージ受信
     this.port.onmessage = (event) => {
       console.log('AudioWorklet: Message received from main thread:', event.data);
       
       if (event.data.command === 'start') {
         this.isRecording = true;
-        console.log('AudioWorklet: Recording STARTED by command');
+        this.processCallCount = 0;
+        this.buffer = [];
+        console.log('AudioWorklet: Recording STARTED immediately');
       } else if (event.data.command === 'stop') {
         this.isRecording = false;
+        this.flushBuffer(); // 停止時に残りのバッファを送信
         console.log('AudioWorklet: Recording STOPPED by command');
       }
     };
+    
+    console.log('AudioWorklet: AudioPCMProcessor initialized');
   }
-
+  
+  // バッファを統合して送信
+  flushBuffer() {
+    if (this.buffer.length > 0) {
+      const mergedBuffer = this.mergeBuffers(this.buffer);
+      
+      // デバッグ: 音声レベルを計算
+      let maxAmplitude = 0;
+      let sumAmplitude = 0;
+      for (let i = 0; i < mergedBuffer.length; i++) {
+        const amplitude = Math.abs(mergedBuffer[i] / 32768);
+        maxAmplitude = Math.max(maxAmplitude, amplitude);
+        sumAmplitude += amplitude;
+      }
+      const avgAmplitude = sumAmplitude / mergedBuffer.length;
+      
+      console.log(`AudioWorklet: Flushing buffer, length = ${mergedBuffer.length}, maxAmplitude = ${maxAmplitude.toFixed(4)}, avgAmplitude = ${avgAmplitude.toFixed(6)}`);
+      
+      // データを送信
+      this.port.postMessage({
+        type: 'audioData',
+        data: mergedBuffer
+      });
+      
+      this.buffer = [];
+    }
+  }
+  
+  // 複数のバッファを1つに統合
+  mergeBuffers(buffers) {
+    const totalLength = buffers.reduce((acc, buf) => acc + buf.length, 0);
+    const merged = new Int16Array(totalLength);
+    let offset = 0;
+    for (const buffer of buffers) {
+      merged.set(buffer, offset);
+      offset += buffer.length;
+    }
+    return merged;
+  }
+  
   process(inputs, outputs, parameters) {
-    // CRITICAL DEBUG: Count every single call to process()
+    // 最初の5回のprocess呼び出しをデバッグ
     this.processCallCount++;
-    
-    // Debug: Log recording state every 1000 calls (about every second)
-    if (this.processCount === undefined) this.processCount = 0;
-    this.processCount++;
-    
-    // CRITICAL: Log first 5 calls to confirm process() is working
     if (this.processCallCount <= 5) {
       console.log(`AudioWorklet: process() call #${this.processCallCount}, inputs:`, inputs, 'isRecording:', this.isRecording);
     }
     
-    if (this.processCount % 1000 === 0) {
-      console.log('AudioWorklet: isRecording =', this.isRecording, 'processCount =', this.processCount);
-    }
-    
+    // 録音中でない場合は処理をスキップ
     if (!this.isRecording) {
-      return true; // Keep processor alive
+      return true;
     }
-
+    
     const input = inputs[0];
-    if (input && input.length > 0) {
-      const channelData = input[0]; // Use first channel (mono)
-      
-      if (channelData && channelData.length > 0) {
-        // Check if there's actual audio data (lowered threshold)
-        let hasAudio = false;
-        let maxAmplitude = 0;
-        let totalAmplitude = 0;
-        
-        for (let i = 0; i < channelData.length; i++) {
-          const abs = Math.abs(channelData[i]);
-          totalAmplitude += abs;
-          if (abs > 0.0001) { // Lowered threshold for better sensitivity
-            hasAudio = true;
-          }
-          if (abs > maxAmplitude) {
-            maxAmplitude = abs;
-          }
-        }
-        
-        const avgAmplitude = totalAmplitude / channelData.length;
-        
-        if (hasAudio) {
-          // Convert Float32Array to Int16Array (PCM 16-bit)
-          const pcmData = new Int16Array(channelData.length);
-          
-          for (let i = 0; i < channelData.length; i++) {
-            // Convert float (-1.0 to 1.0) to 16-bit integer (-32768 to 32767)
-            const clampedValue = Math.max(-1, Math.min(1, channelData[i]));
-            pcmData[i] = Math.floor(clampedValue * 32767);
-          }
-          
-          console.log('AudioWorklet: Sending PCM data, length =', pcmData.length, 'maxAmplitude =', maxAmplitude.toFixed(4), 'avgAmplitude =', avgAmplitude.toFixed(6));
-          
-          // Send PCM data to main thread
-          this.port.postMessage({
-            type: 'audioData',
-            data: pcmData
-          });
-        } else if (maxAmplitude > 0 && this.processCount % 2000 === 0) {
-          // Log when there's some audio but below threshold
-          console.log('AudioWorklet: Audio detected but below threshold, maxAmplitude =', maxAmplitude.toFixed(6), 'avgAmplitude =', avgAmplitude.toFixed(6));
-        }
+    
+    // 入力がない場合はスキップ
+    if (!input || !input[0] || input[0].length === 0) {
+      if (this.processCallCount <= 10) {
+        console.log('AudioWorklet: No input data available');
       }
-    } else {
-      // Log when no input is available
-      if (this.processCount % 1000 === 0) {
-        console.log('AudioWorklet: No input available');
+      return true;
+    }
+    
+    const float32Data = input[0];
+    
+    // Float32からInt16（PCM）に変換
+    const int16Data = new Int16Array(float32Data.length);
+    let hasAudio = false;
+    
+    for (let i = 0; i < float32Data.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32Data[i]));
+      int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      
+      // 音声があるかチェック（閾値を下げる）
+      const abs = Math.abs(s);
+      if (abs > 0.0001) { // 非常に小さい閾値
+        hasAudio = true;
       }
     }
     
-    return true; // Keep processor alive
+    // バッファに追加
+    this.buffer.push(int16Data);
+    
+    // バッファサイズを計算
+    const totalSamples = this.buffer.reduce((acc, buf) => acc + buf.length, 0);
+    
+    // デバッグ出力（最初の10回のみ）
+    if (this.processCallCount <= 10) {
+      console.log(`AudioWorklet: Buffer size = ${totalSamples}/${this.bufferSize}, hasAudio = ${hasAudio}`);
+    }
+    
+    // バッファが満杯になったら送信
+    if (totalSamples >= this.bufferSize) {
+      this.flushBuffer();
+    }
+    
+    return true;
   }
 }
 
-// Register the processor
+// AudioWorkletProcessorを登録
 registerProcessor('audio-pcm-processor', AudioPCMProcessor);
+
+console.log('AudioWorklet: audio-processor-worklet.js loaded and registered');

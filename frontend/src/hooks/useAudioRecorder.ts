@@ -125,18 +125,14 @@ export const useAudioRecorder = (onAudioData: (data: string) => void): UseAudioR
       
       setIsRecording(true);
       
-      // AudioWorkletに録音開始を通知 (少し遅らせて送信)
-      console.log('CRITICAL: setTimeout scheduled for AudioWorklet start command in 500ms');
-      setTimeout(() => {
-        console.log('CRITICAL: setTimeout executing now, workletRef.current:', workletRef.current);
-        if (workletRef.current) {
-          console.log('AudioWorkletに開始コマンドを送信');
-          workletRef.current.port.postMessage({ command: 'start' });
-          console.log('CRITICAL: Start command sent to AudioWorklet');
-        } else {
-          console.error('CRITICAL: workletRef.current is null in setTimeout!');
-        }
-      }, 500);
+      // AudioWorkletに録音開始を即座に通知
+      console.log('CRITICAL: Sending start command to AudioWorklet immediately');
+      if (workletRef.current) {
+        workletRef.current.port.postMessage({ command: 'start' });
+        console.log('CRITICAL: Start command sent to AudioWorklet successfully');
+      } else {
+        console.error('CRITICAL: workletRef.current is null!');
+      }
       
       // 音声レベル監視開始
       updateAudioLevel();
