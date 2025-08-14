@@ -1,5 +1,10 @@
 # システムステータス
 
+## 🌐 アクセス情報
+
+**システムURL**: https://d2pomq1mbe8jsg.cloudfront.net  
+**WebSocket API**: wss://2e5ztowm1h.execute-api.ap-northeast-1.amazonaws.com/prod
+
 ## 🎯 現在の稼働状況 (2025年8月14日)
 
 ### ✅ 動作確認済み機能
@@ -11,6 +16,7 @@
 | **AI応答生成** | ✅ 正常動作 | Claude Sonnet 4による海事通信分析 |
 | **リアルタイム通信** | ✅ 正常動作 | WebSocket経由の双方向通信 |
 | **自動AI応答** | ✅ 実装済み | 発話終了を自動検知してAI応答を生成 |
+| **音声出力** | ✅ 実装済み | Web Speech APIによる自動読み上げ（NEW!） |
 
 ## 🚀 使用している最新技術
 

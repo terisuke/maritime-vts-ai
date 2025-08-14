@@ -1,5 +1,13 @@
 # デプロイガイド
 
+## 🌐 デプロイ済みシステムURL
+
+**本番環境**: https://d2pomq1mbe8jsg.cloudfront.net  
+**WebSocket API**: wss://2e5ztowm1h.execute-api.ap-northeast-1.amazonaws.com/prod  
+**リージョン**: ap-northeast-1 (東京)
+
+> ✅ **稼働中** - 2025年8月14日現在、システムは正常稼働中です
+
 ## 本番環境デプロイ手順
 
 ### 1. 事前準備
