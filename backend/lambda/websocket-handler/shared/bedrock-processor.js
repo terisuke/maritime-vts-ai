@@ -14,7 +14,7 @@ class BedrockProcessor {
     });
     // Claude Sonnet 4 - 2025年5月リリースの最新モデル
     // ap-northeast-1リージョンで利用可能
-    this.modelId = process.env.BEDROCK_MODEL_ID || 'anthropic.claude-sonnet-4-20250514-v1:0';
+    this.modelId = process.env.BEDROCK_MODEL_ID || 'apac.anthropic.claude-sonnet-4-20250514-v1:0';
   }
 
   /**
@@ -154,7 +154,7 @@ class BedrockProcessor {
 時刻: ${timestamp}
 船舶情報: ${vesselInfo}
 
-以下の形式でJSON形式で応答してください：
+必ず以下のJSON形式で応答してください。他の文章を含めないでください：
 {
   "classification": "GREEN/AMBER/RED のいずれか",
   "suggestedResponse": "VTSからの応答文（日本語）",
@@ -169,27 +169,33 @@ class BedrockProcessor {
    */
   parseAIResponse(responseText) {
     try {
-      // JSONブロックを抽出
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        
-        // 分類の検証
-        const validClassifications = ['GREEN', 'AMBER', 'RED'];
-        const classification = validClassifications.includes(parsed.classification) 
-          ? parsed.classification 
-          : 'AMBER';
-        
-        return {
-          classification: classification,
-          suggestedResponse: parsed.suggestedResponse || '了解しました。',
-          confidence: Math.max(0, Math.min(1, parsed.confidence || 0.8)),
-          riskFactors: Array.isArray(parsed.riskFactors) ? parsed.riskFactors : [],
-          recommendedActions: Array.isArray(parsed.recommendedActions) ? parsed.recommendedActions : [],
-          timestamp: new Date().toISOString(),
-          rawResponse: responseText
-        };
+      // 文字列がJSONで始まっていない場合、JSONブロックを抽出
+      let jsonText = responseText.trim();
+      if (!jsonText.startsWith('{')) {
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error('JSON response not found in AI output');
+        }
+        jsonText = jsonMatch[0];
       }
+      
+      const parsed = JSON.parse(jsonText);
+      
+      // 分類の検証
+      const validClassifications = ['GREEN', 'AMBER', 'RED'];
+      const classification = validClassifications.includes(parsed.classification) 
+        ? parsed.classification 
+        : 'AMBER';
+      
+      return {
+        classification: classification,
+        suggestedResponse: parsed.suggestedResponse || '了解しました。通信を継続してください。',
+        confidence: Math.max(0, Math.min(1, parsed.confidence || 0.8)),
+        riskFactors: Array.isArray(parsed.riskFactors) ? parsed.riskFactors : [],
+        recommendedActions: Array.isArray(parsed.recommendedActions) ? parsed.recommendedActions : [],
+        timestamp: new Date().toISOString(),
+        rawResponse: responseText
+      };
     } catch (error) {
       this.logger.error('Failed to parse AI response', { responseText, error });
     }
