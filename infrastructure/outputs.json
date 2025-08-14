@@ -1,1 +1,15 @@
-{}
+{
+  "VtsInfrastructureStack": {
+    "TranscriptionProcessorName": "vts-transcription-processor",
+    "WebSocketApiUrl": "wss://1sgsvccfa2.execute-api.ap-northeast-1.amazonaws.com/dev",
+    "TranscriptionLogGroupName": "/aws/vts/transcriptions",
+    "NlpLogGroupName": "/aws/vts/nlp-processing",
+    "WebSocketHandlerName": "vts-websocket-handler",
+    "AudioBucketName": "vts-audio-storage-381491903672-ap-northeast-1",
+    "ConversationsTableName": "vts-conversations",
+    "ConnectionsTableName": "vts-connections",
+    "NlpProcessorName": "vts-nlp-processor",
+    "VhfLogGroupName": "/aws/vts/vhf-communications",
+    "WebSocketApiId": "1sgsvccfa2"
+  }
+}
