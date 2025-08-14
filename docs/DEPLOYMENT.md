@@ -97,7 +97,7 @@ aws lambda update-function-configuration \
 aws lambda update-function-configuration \
   --function-name vts-nlp-processor \
   --environment Variables='{
-    "BEDROCK_MODEL_ID":"anthropic.claude-3-sonnet-20240229-v1:0",
+    "BEDROCK_MODEL_ID":"anthropic.claude-sonnet-4-20250514-v1:0",
     "CONVERSATIONS_TABLE":"vts-conversations"
   }'
 ```
@@ -135,11 +135,11 @@ aws transcribe list-vocabularies --query "Vocabularies[?LanguageCode=='ja-JP']"
 ```bash
 # モデルアクセスの確認
 aws bedrock list-foundation-models \
-  --query "modelSummaries[?modelId=='anthropic.claude-3-sonnet-20240229-v1:0']"
+  --query "modelSummaries[?modelId=='anthropic.claude-sonnet-4-20250514-v1:0']"
 
 # モデルアクセス権限の確認
 aws bedrock get-foundation-model-access \
-  --model-id anthropic.claude-3-sonnet-20240229-v1:0
+  --model-id anthropic.claude-sonnet-4-20250514-v1:0
 ```
 
 ### DynamoDBエラー
@@ -328,5 +328,5 @@ aws s3 sync \
 
 ---
 
-最終更新: 2025-08-13
+最終更新: 2025-08-14
 バージョン: 1.0.0
