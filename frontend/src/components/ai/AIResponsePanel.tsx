@@ -6,7 +6,8 @@ interface AIResponsePanelProps {
 }
 
 const AIResponsePanel: React.FC<AIResponsePanelProps> = ({ response }) => {
-  const [isAutoSpeak, setIsAutoSpeak] = useState(true);
+  // デフォルトをOFFに変更（エコー問題防止のため）
+  const [isAutoSpeak, setIsAutoSpeak] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   // 音声合成関数
@@ -87,37 +88,49 @@ const AIResponsePanel: React.FC<AIResponsePanelProps> = ({ response }) => {
           <span className="mr-2">🤖</span>
           AI支援応答
         </h2>
-        {response && (
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => speak(response.suggestedResponse)}
-              className={`px-3 py-1 rounded text-white text-sm transition-all ${
-                isSpeaking 
+        {/* 音声出力コントロールを常に表示 */}
+        <div className="flex items-center space-x-2">
+          {/* 音声再生ボタン - responseがある時のみ有効化 */}
+          <button
+            onClick={() => response && speak(response.suggestedResponse)}
+            disabled={!response}
+            className={`px-3 py-1 rounded text-white text-sm transition-all ${
+              !response 
+                ? 'bg-gray-600 opacity-50 cursor-not-allowed' 
+                : isSpeaking 
                   ? 'bg-green-600 animate-pulse' 
                   : 'bg-blue-600 hover:bg-blue-700'
-              }`}
-              title="応答を読み上げ"
-            >
-              {isSpeaking ? '🔊 再生中...' : '🔊 再生'}
-            </button>
-            <button
-              onClick={stop}
-              className="px-3 py-1 bg-gray-600 hover:bg-gray-700 rounded text-white text-sm transition-all"
-              title="読み上げを停止"
-            >
-              ⏹️ 停止
-            </button>
-            <label className="flex items-center text-white text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isAutoSpeak}
-                onChange={(e) => setIsAutoSpeak(e.target.checked)}
-                className="mr-1"
-              />
-              自動読み上げ
-            </label>
-          </div>
-        )}
+            }`}
+            title={!response ? "応答待機中" : "応答を読み上げ"}
+          >
+            {isSpeaking ? '🔊 再生中...' : '🔊 再生'}
+          </button>
+          
+          {/* 停止ボタン - 再生中のみ有効化 */}
+          <button
+            onClick={stop}
+            disabled={!isSpeaking}
+            className={`px-3 py-1 rounded text-white text-sm transition-all ${
+              !isSpeaking
+                ? 'bg-gray-600 opacity-50 cursor-not-allowed'
+                : 'bg-gray-600 hover:bg-gray-700'
+            }`}
+            title="読み上げを停止"
+          >
+            ⏹️ 停止
+          </button>
+          
+          {/* 自動読み上げ設定 - 常に表示・操作可能 */}
+          <label className="flex items-center text-white text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isAutoSpeak}
+              onChange={(e) => setIsAutoSpeak(e.target.checked)}
+              className="mr-1"
+            />
+            自動読み上げ
+          </label>
+        </div>
       </div>
       
       {!response ? (
